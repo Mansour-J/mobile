@@ -6,14 +6,14 @@ import 'package:http/http.dart';
 import 'package:result_extensions/result_extensions.dart';
 import 'package:http/retry.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:lichess_mobile/src/model/auth/auth_repository.dart';
+import 'package:lichess_mobile/src/model/auth/user_session.dart';
 import 'package:lichess_mobile/src/model/user/user.dart';
-import 'package:lichess_mobile/src/constants.dart';
 import 'package_info.dart';
 import 'errors.dart';
+
+part 'api_client.g.dart';
 
 const defaultRetries = [
   Duration(milliseconds: 200),
@@ -23,27 +23,40 @@ const defaultRetries = [
   Duration(milliseconds: 1300),
 ];
 
-final apiClientProvider = Provider<ApiClient>((ref) {
-  const storage = FlutterSecureStorage();
-  final packageInfo = ref.watch(packageInfoProvider);
-  final authClient = AuthClient(
+@Riverpod(keepAlive: true)
+Client httpClient(HttpClientRef ref) {
+  final client = Client();
+  ref.onDispose(() {
+    client.close();
+  });
+  return client;
+}
+
+@Riverpod(keepAlive: true)
+ApiClient apiClient(ApiClientRef ref) {
+  final httpClient = ref.watch(httpClientProvider);
+  final authClient = _AuthClient(
     ref,
-    storage,
-    packageInfo,
-    Client(),
+    httpClient,
     Logger('AuthClient'),
   );
-  final apiClient = ApiClient(Logger('ApiClient'), authClient);
+  final apiClient = ApiClient(
+    Logger('ApiClient'),
+    authClient,
+  );
   ref.onDispose(() {
     apiClient.close();
   });
   return apiClient;
-});
+}
 
 /// Convenient client that captures and returns API errors.
 class ApiClient {
-  ApiClient(this._log, this._client, {List<Duration> retries = defaultRetries})
-      : _retryClient = RetryClient.withDelays(
+  ApiClient(
+    this._log,
+    this._client, {
+    List<Duration> retries = defaultRetries,
+  }) : _retryClient = RetryClient.withDelays(
           _client,
           retries,
           whenError: (_, __) => true,
@@ -56,7 +69,7 @@ class ApiClient {
   final RetryClient _retryClient;
 
   /// Makes app user agent
-  static String userAgent(PackageInfo info, User? user) =>
+  static String userAgent(PackageInfo info, LightUser? user) =>
       '${info.appName}/${info.version} $defaultTargetPlatform ${user != null ? user.id : 'anon.'}';
 
   FutureResult<Response> get(
@@ -69,7 +82,9 @@ class ApiClient {
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
         return GenericIOException();
-      }).flatMap((response) => _validateResponseStatusResult(url, response));
+      }).flatMap(
+        (response) => _validateResponseStatusResult('GET', url, response),
+      );
 
   FutureResult<Response> post(
     Uri url, {
@@ -84,7 +99,9 @@ class ApiClient {
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
         return GenericIOException();
-      }).flatMap((response) => _validateResponseStatusResult(url, response));
+      }).flatMap(
+        (response) => _validateResponseStatusResult('POST', url, response),
+      );
 
   FutureResult<Response> delete(
     Uri url, {
@@ -99,7 +116,9 @@ class ApiClient {
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
         return GenericIOException();
-      }).flatMap((response) => _validateResponseStatusResult(url, response));
+      }).flatMap(
+        (response) => _validateResponseStatusResult('DELETE', url, response),
+      );
 
   Future<StreamedResponse> stream(
     Uri url, {
@@ -114,19 +133,24 @@ class ApiClient {
           _log.severe('Request error', error, stackTrace);
           return GenericIOException();
         })
-        .flatMap((r) => _validateResponseStatusResult(url, r))
+        .flatMap((r) => _validateResponseStatusResult('GET', url, r))
         .then((r) => r.getOrThrow());
   }
 
   Result<T> _validateResponseStatusResult<T extends BaseResponse>(
+    String method,
     Uri url,
     T response,
   ) {
     if (response.statusCode >= 500) {
-      _log.severe('$url responded with status ${response.statusCode}');
+      _log.severe('$method $url responded with status ${response.statusCode}');
     } else if (response.statusCode >= 400) {
-      _log.warning('$url responded with status ${response.statusCode}');
+      final body = response is Response ? response.body : '';
+      _log.warning(
+        '$method $url responded with status ${response.statusCode}\n$body',
+      );
     }
+
     return response.statusCode < 400
         ? Result.value(response)
         : response.statusCode == 404
@@ -146,25 +170,23 @@ class ApiClient {
 }
 
 /// Http client that sets the Authorization header when a token has been stored.
-class AuthClient extends BaseClient {
-  AuthClient(this.ref, this.storage, this._info, this._inner, this._logger);
+class _AuthClient extends BaseClient {
+  _AuthClient(this.ref, this._inner, this._logger);
 
-  final Ref ref;
-  final FlutterSecureStorage storage;
-  final PackageInfo _info;
+  final ApiClientRef ref;
   final Client _inner;
   final Logger _logger;
 
   @override
   Future<StreamedResponse> send(BaseRequest request) async {
-    final token = await storage.read(key: kOAuthTokenStorageKey);
-    if (token != null) {
-      request.headers['Authorization'] = 'Bearer $token';
+    final session = ref.read(userSessionStateProvider);
+    final info = ref.read(packageInfoProvider);
+
+    if (session != null && !request.headers.containsKey('Authorization')) {
+      request.headers['Authorization'] = 'Bearer ${session.token}';
     }
 
-    final user = ref.read(currentAccountProvider);
-
-    request.headers['user-agent'] = ApiClient.userAgent(_info, user);
+    request.headers['user-agent'] = ApiClient.userAgent(info, session?.user);
 
     _logger.info('${request.method} ${request.url} ${request.headers}');
 

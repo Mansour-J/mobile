@@ -6,8 +6,9 @@ import 'package:lichess_mobile/src/common/models.dart';
 import 'package:lichess_mobile/src/utils/json.dart';
 
 part 'user.freezed.dart';
+part 'user.g.dart';
 
-@freezed
+@Freezed(fromJson: true, toJson: true)
 class LightUser with _$LightUser {
   const factory LightUser({
     required UserId id,
@@ -15,10 +16,15 @@ class LightUser with _$LightUser {
     String? title,
     bool? isPatron,
   }) = _LightUser;
+
+  factory LightUser.fromJson(Map<String, dynamic> json) =>
+      _$LightUserFromJson(json);
 }
 
 @freezed
 class User with _$User {
+  const User._();
+
   const factory User({
     required UserId id,
     required String username,
@@ -30,6 +36,9 @@ class User with _$User {
     PlayTime? playTime,
     Profile? profile,
   }) = _User;
+
+  LightUser get lightUser =>
+      LightUser(id: id, name: username, title: title, isPatron: isPatron);
 
   factory User.fromJson(Map<String, dynamic> json) =>
       User.fromPick(pick(json).required());

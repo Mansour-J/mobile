@@ -19,6 +19,7 @@ import 'package:lichess_mobile/src/model/user/user.dart';
 import 'package:lichess_mobile/src/ui/user/perf_stats_screen.dart';
 import 'package:lichess_mobile/src/utils/duration.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
+import 'package:lichess_mobile/src/utils/navigation.dart';
 import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
@@ -79,23 +80,16 @@ class UserScreen extends ConsumerWidget {
 
 /// Common widget for [UserScreen] and [ProfileScreen].
 ///
-/// The `showPlayerTitle` param is used by [ProfileScreen] because the username is
-/// not present in the app bar.
-///
 /// Use `inCustomScrollView` parameter to return a [SliverPadding] widget needed
 /// by [ProfileScreen].
 class UserScreenBody extends StatelessWidget {
   const UserScreenBody({
     required this.user,
     this.inCustomScrollView = false,
-    this.showPlayerTitle = false,
     super.key,
   });
 
   final User user;
-
-  /// Should show the player title on top of the body.
-  final bool showPlayerTitle;
 
   /// If set to `true` this widget will return a [SliverPadding] instead of a
   /// [ListView].
@@ -104,20 +98,16 @@ class UserScreenBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final list = [
-      _Profile(user: user, showPlayerTitle: showPlayerTitle),
+      _Profile(user: user),
       PerfCards(user: user),
       RecentGames(user: user),
     ];
 
     return inCustomScrollView
-        ? SliverPadding(
-            padding: Styles.verticalBodyPadding,
-            sliver: SliverList(
-              delegate: SliverChildListDelegate(list),
-            ),
+        ? SliverList(
+            delegate: SliverChildListDelegate(list),
           )
         : ListView(
-            padding: Styles.verticalBodyPadding,
             children: list,
           );
   }
@@ -128,40 +118,31 @@ const _userNameStyle = TextStyle(fontSize: 20, fontWeight: FontWeight.w500);
 class _Profile extends StatelessWidget {
   const _Profile({
     required this.user,
-    required this.showPlayerTitle,
   });
 
   final User user;
-  final bool showPlayerTitle;
 
   @override
   Widget build(BuildContext context) {
-    final playerTitle = PlayerTitle(
-      userName: user.username,
-      title: user.title,
-      style: _userNameStyle,
-    );
     final userFullName = user.profile?.fullName != null
         ? Text(
             user.profile!.fullName!,
-            style: showPlayerTitle ? null : _userNameStyle,
+            style: _userNameStyle,
           )
         : null;
-    final title = showPlayerTitle ? playerTitle : userFullName;
-    final subTitle = showPlayerTitle ? userFullName : null;
+    final title = userFullName;
 
     return Padding(
-      padding: Styles.bodySectionPadding,
+      padding: Styles.bodyFirstSectionPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (user.isPatron == true || title != null || subTitle != null)
+          if (user.isPatron == true || title != null)
             ListTile(
               leading: user.isPatron == true
                   ? const Icon(LichessIcons.patron, size: 40)
                   : null,
               title: title,
-              subtitle: subTitle,
               contentPadding: const EdgeInsets.symmetric(vertical: 10),
             ),
           if (user.profile != null)
@@ -203,6 +184,10 @@ class PerfCards extends StatelessWidget {
           p.numberOfGames > 0 &&
           p.ratingDeviation < kClueLessDeviation;
     }).toList(growable: false);
+
+    if (userPerfs.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: Styles.bodySectionPadding,
@@ -283,13 +268,12 @@ class PerfCards extends StatelessWidget {
   }
 
   void _handlePerfCardTap(BuildContext context, Perf perf) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) => PerfStatsScreen(
-          user: user,
-          perf: perf,
-          loggedInUser: user,
-        ),
+    pushPlatformRoute(
+      context,
+      builder: (context) => PerfStatsScreen(
+        user: user,
+        perf: perf,
+        loggedInUser: user,
       ),
     );
   }
@@ -308,7 +292,7 @@ class RecentGames extends ConsumerWidget {
       data: (data) {
         return ListSection(
           // TODO translate
-          header: const Text('Recent games', style: Styles.sectionTitle),
+          header: Text('Recent games', style: Styles.sectionTitle),
           hasLeading: true,
           children: data.map((game) {
             final mySide = game.white.id == user.id ? Side.white : Side.black;
@@ -322,13 +306,13 @@ class RecentGames extends ConsumerWidget {
 
             return GameListTile(
               onTap: () {
-                Navigator.of(context, rootNavigator: true).push<void>(
-                  MaterialPageRoute(
-                    builder: (context) => ArchivedGameScreen(
-                      gameData: game,
-                      orientation:
-                          user.id == game.white.id ? Side.white : Side.black,
-                    ),
+                pushPlatformRoute(
+                  context,
+                  rootNavigator: true,
+                  builder: (context) => ArchivedGameScreen(
+                    gameData: game,
+                    orientation:
+                        user.id == game.white.id ? Side.white : Side.black,
                   ),
                 );
               },

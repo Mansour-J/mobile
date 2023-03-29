@@ -1,6 +1,6 @@
 # Lichess Mobile
 
-Second iteration of the [Lichess mobile app](https://lichess.org/mobile).
+Second iteration of the [Lichess mobile app](https://lichess.org/mobile)..
 
 ## How to contribute
 

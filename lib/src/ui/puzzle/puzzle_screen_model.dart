@@ -12,9 +12,7 @@ import 'package:lichess_mobile/src/common/tree.dart';
 import 'package:lichess_mobile/src/common/uci.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_service.dart';
-import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_preferences.dart';
-import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_session.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_difficulty.dart';
 
@@ -25,32 +23,17 @@ part 'puzzle_screen_model.freezed.dart';
 class PuzzleScreenModel extends _$PuzzleScreenModel {
   // ignore: avoid-late-keyword
   late Node _gameTree;
+  Timer? _firstMoveTimer;
   Timer? _viewSolutionTimer;
 
   @override
   PuzzleScreenState build(PuzzleContext context) {
-    final root = Root.fromPgn(context.puzzle.game.pgn);
-    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Node;
-
-    // play first move after 1 second
-    Future<void>.delayed(const Duration(seconds: 1))
-        .then((_) => _setPath(state.initialPath));
-
-    final initialPath = UciPath.fromId(_gameTree.children.first.id);
-
     ref.onDispose(() {
+      _firstMoveTimer?.cancel();
       _viewSolutionTimer?.cancel();
     });
 
-    return PuzzleScreenState(
-      mode: PuzzleMode.play,
-      initialPath: initialPath,
-      currentPath: UciPath.empty,
-      nodeList: IList([ViewNode.fromNode(_gameTree)]),
-      pov: _gameTree.nodeAt(initialPath).ply.isEven ? Side.white : Side.black,
-      resultSent: false,
-      isChangingDifficulty: false,
-    );
+    return _loadNewContext(context);
   }
 
   Future<void> playUserMove(Move move) async {
@@ -60,7 +43,7 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
       final movesToTest =
           state.nodeList.sublist(state.initialPath.size).map((e) => e.sanMove);
 
-      final isGoodMove = context.puzzle.testSolution(movesToTest);
+      final isGoodMove = state.puzzle.testSolution(movesToTest);
 
       if (isGoodMove) {
         state = state.copyWith(
@@ -69,7 +52,7 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
 
         final isCheckmate = movesToTest.last.san.endsWith('#');
         final nextUci =
-            context.puzzle.puzzle.solution.getOrNull(movesToTest.length);
+            state.puzzle.puzzle.solution.getOrNull(movesToTest.length);
         // checkmate is always a win
         if (isCheckmate) {
           _completePuzzle();
@@ -152,7 +135,35 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
     return nextPuzzle;
   }
 
+  void continueWithNextPuzzle(PuzzleContext nextContext) {
+    state = _loadNewContext(nextContext);
+  }
+
   // --
+
+  PuzzleScreenState _loadNewContext(PuzzleContext context) {
+    final root = Root.fromPgn(context.puzzle.game.pgn);
+    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Node;
+
+    // play first move after 1 second
+    _firstMoveTimer = Timer(const Duration(seconds: 1), () {
+      _setPath(state.initialPath);
+    });
+
+    final initialPath = UciPath.fromId(_gameTree.children.first.id);
+
+    return PuzzleScreenState(
+      puzzle: context.puzzle,
+      glicko: context.glicko,
+      mode: PuzzleMode.play,
+      initialPath: initialPath,
+      currentPath: UciPath.empty,
+      nodeList: IList([ViewNode.fromNode(_gameTree)]),
+      pov: _gameTree.nodeAt(initialPath).ply.isEven ? Side.white : Side.black,
+      resultSent: false,
+      isChangingDifficulty: false,
+    );
+  }
 
   void _goToNextNode() {
     if (state.node.children.isEmpty) return;
@@ -182,7 +193,7 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
         puzzleSessionProvider(context.userId, context.theme).notifier;
 
     ref.read(sessionNotifier).addAttempt(
-          context.puzzle.puzzle.id,
+          state.puzzle.puzzle.id,
           win: result == PuzzleResult.win,
         );
 
@@ -192,29 +203,15 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
       userId: context.userId,
       angle: context.theme,
       solution: PuzzleSolution(
-        id: context.puzzle.puzzle.id,
+        id: state.puzzle.puzzle.id,
         win: state.result == PuzzleResult.win,
         rated: context.userId != null,
       ),
     );
 
-    final round = next?.rounds?.firstWhereOrNull(
-      (p) => p.id == context.puzzle.puzzle.id,
-    );
-    if (round != null) {
-      ref
-          .read(sessionNotifier)
-          .setRatingDiff(context.puzzle.puzzle.id, round.ratingDiff);
-    }
-
-    // We need to invalidate the next puzzle for the offline puzzle preview on
-    // home screen tab and the healthy mix puzzle button on the puzzle screen tab.
-    // Not the best solution because we must ensure to always provide a puzzle
-    // parameter to the puzzle screen (PuzzleScreen must no be watching nextPuzzleProvider).
-    // It would be better to have invalidate the `nextPuzzleProvider` when the
-    // puzzle screen pops.
-    if (context.theme == PuzzleTheme.mix) {
-      ref.invalidate(nextPuzzleProvider(context.theme));
+    final rounds = next?.rounds;
+    if (rounds != null) {
+      ref.read(sessionNotifier).setRatingDiffs(rounds);
     }
 
     // TODO check if next is null and show a message
@@ -229,10 +226,11 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
     final sanMove = newNodeList.last.sanMove;
     final isForward = path.size > state.currentPath.size;
     if (isForward) {
+      final isCheck = sanMove.san.contains('+');
       if (sanMove.san.contains('x')) {
-        ref.read(moveFeedbackServiceProvider).captureFeedback();
+        ref.read(moveFeedbackServiceProvider).captureFeedback(check: isCheck);
       } else {
-        ref.read(moveFeedbackServiceProvider).moveFeedback();
+        ref.read(moveFeedbackServiceProvider).moveFeedback(check: isCheck);
       }
     }
     state = state.copyWith(
@@ -257,7 +255,7 @@ class PuzzleScreenModel extends _$PuzzleScreenModel {
   void _mergeSolution() {
     final initialNode = _gameTree.nodeAt(state.initialPath);
     final fromPly = initialNode.ply;
-    final posAndNodes = context.puzzle.puzzle.solution.foldIndexed(
+    final posAndNodes = state.puzzle.puzzle.solution.foldIndexed(
       Tuple2(initialNode.position, IList<Node>(const [])),
       (index, previous, uci) {
         final move = Move.fromUci(uci);
@@ -293,6 +291,8 @@ class PuzzleScreenState with _$PuzzleScreenState {
   const PuzzleScreenState._();
 
   const factory PuzzleScreenState({
+    required Puzzle puzzle,
+    required PuzzleGlicko? glicko,
     required PuzzleMode mode,
     required UciPath initialPath,
     required UciPath currentPath,

@@ -77,14 +77,40 @@ class PuzzleRepository {
         .flatMap(_decodeBatchResponse);
   }
 
-  FutureResult<Puzzle> daily() {
-    return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/daily')).flatMap(
+  FutureResult<Puzzle> fetch(PuzzleId id) {
+    return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/$id')).flatMap(
           (response) => readJsonObject(
             response.body,
             mapper: _puzzleFromJson,
             logger: _log,
           ),
         );
+  }
+
+  FutureResult<Puzzle> daily() {
+    return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/daily')).flatMap(
+          (response) => readJsonObject(
+            response.body,
+            mapper: _puzzleFromJson,
+            logger: _log,
+          ).map(
+            (puzzle) => puzzle.copyWith(
+              isDailyPuzzle: true,
+            ),
+          ),
+        );
+  }
+
+  FutureResult<PuzzleDashboard> puzzleDashboard(int days) {
+    return apiClient
+        .get(Uri.parse('$kLichessHost/api/puzzle/dashboard/$days'))
+        .flatMap((response) {
+      return readJsonObject(
+        response.body,
+        mapper: _puzzleDashboardFromJson,
+        logger: _log,
+      );
+    });
   }
 
   Result<PuzzleBatchResponse> _decodeBatchResponse(http.Response response) {
@@ -132,6 +158,9 @@ class PuzzleBatchResponse with _$PuzzleBatchResponse {
 
 Puzzle _puzzleFromJson(Map<String, dynamic> json) =>
     _puzzleFromPick(pick(json).required());
+
+PuzzleDashboard _puzzleDashboardFromJson(Map<String, dynamic> json) =>
+    _puzzleDashboardFromPick(pick(json).required());
 
 Puzzle _puzzleFromPick(RequiredPick pick) {
   return Puzzle(
@@ -195,8 +224,40 @@ PuzzleGame _puzzleGameFromPick(RequiredPick pick) {
 PuzzleGamePlayer _puzzlePlayerFromPick(RequiredPick pick) {
   return PuzzleGamePlayer(
     name: pick('name').asStringOrThrow(),
-    userId: pick('userId').asStringOrThrow(),
+    userId: pick('userId').asUserIdOrThrow(),
     side: pick('color').asSideOrThrow(),
     title: pick('title').asStringOrNull(),
   );
 }
+
+PuzzleDashboard _puzzleDashboardFromPick(RequiredPick pick) => PuzzleDashboard(
+      global: PuzzleDashboardData(
+        nb: pick('global')('nb').asIntOrThrow(),
+        firstWins: pick('global')('firstWins').asIntOrThrow(),
+        replayWins: pick('global')('replayWins').asIntOrThrow(),
+        performance: pick('global')('performance').asIntOrThrow(),
+        theme: PuzzleTheme.mix,
+      ),
+      themes: pick('themes')
+          .asMapOrThrow<String, Map<String, dynamic>>()
+          .keys
+          .map(
+            (key) => _puzzleDashboardDataFromPick(
+              pick('themes')(key)('results').required(),
+              key,
+            ),
+          )
+          .toIList(),
+    );
+
+PuzzleDashboardData _puzzleDashboardDataFromPick(
+  RequiredPick results,
+  String themeKey,
+) =>
+    PuzzleDashboardData(
+      nb: results('nb').asIntOrThrow(),
+      firstWins: results('firstWins').asIntOrThrow(),
+      replayWins: results('replayWins').asIntOrThrow(),
+      performance: results('performance').asIntOrThrow(),
+      theme: puzzleThemeNameMap.get(themeKey) ?? PuzzleTheme.mix,
+    );

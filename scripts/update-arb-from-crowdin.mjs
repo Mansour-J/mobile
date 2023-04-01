@@ -169,10 +169,9 @@ function unescape(str) {
 
 function fixKey(str, module) {
   const fixed = str.replace(/\./g, '_')
-  // TODO consider prefixing modules later
-  // if (module !== 'site') {
-  //   return module + capitalize(fixed)
-  // }
+  if (module !== 'site') {
+    return module + capitalize(fixed)
+  }
   return fixed
 }
 
@@ -234,9 +233,10 @@ function transformTranslations(data, locale, module, makeTemplate = false) {
       pluralString += ` ${quantity}{${childString}}`
     })
     pluralString += '}'
-    transformed[plural.$.name] = pluralString
+    const transKey = fixKey(plural.$.name, module)
+    transformed[transKey] = pluralString
     if (makeTemplate) {
-      transformed[`@${plural.$.name}`] = {
+      transformed[`@${transKey}`] = {
         placeholders: {
           count: { type: 'int' }
         }

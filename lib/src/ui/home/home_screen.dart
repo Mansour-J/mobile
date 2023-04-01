@@ -33,13 +33,20 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _androidRefreshKey = GlobalKey<RefreshIndicatorState>();
 
+  bool isOnline = true;
+
   @override
   Widget build(BuildContext context) {
     ref.listen(connectivityChangesProvider, (_, connectivity) {
-      if (!connectivity.isRefreshing &&
-          connectivity.hasValue &&
-          connectivity.value!.isOnline) {
-        _refreshData();
+      // Refresh the data only when the user comes back online
+      if (!connectivity.isRefreshing && connectivity.hasValue) {
+        final newOnlineValue = connectivity.value!.isOnline;
+
+        if (isOnline == false && newOnlineValue == true) {
+          _refreshData();
+        }
+
+        isOnline = newOnlineValue;
       }
     });
 
@@ -89,13 +96,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _refreshData() {
-    return ref
-        .refresh(dailyPuzzleProvider.future)
-        .then((_) => ref.refresh(leaderboardProvider));
+    return ref.refresh(top1Provider.future);
   }
 }
 
-/// Scaffold with a sticky Create Game button at the bottom
 class _HomeScaffold extends StatelessWidget {
   const _HomeScaffold({
     required this.child,
@@ -131,14 +135,14 @@ class _HomeBody extends ConsumerWidget {
           return defaultTargetPlatform == TargetPlatform.android
               ? ListView(
                   children: [
-                    LeaderboardWidget(),
                     const _DailyPuzzle(),
+                    LeaderboardWidget(),
                   ],
                 )
               : SliverList(
                   delegate: SliverChildListDelegate([
-                    LeaderboardWidget(),
                     const _DailyPuzzle(),
+                    LeaderboardWidget(),
                   ]),
                 );
         } else {
@@ -195,7 +199,7 @@ class _ConnectivityBanner extends ConsumerWidget {
                 const SizedBox(width: 5),
                 const Flexible(
                   child: Text(
-                    'No internet connection. Enjoy the offline puzzles!',
+                    'Network connectivity unavailable.',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -224,26 +228,31 @@ class _DailyPuzzle extends ConsumerWidget {
           orientation: preview.orientation.cg,
           fen: preview.initialFen,
           lastMove: preview.initialMove.cg,
-          header: Text(context.l10n.dailyPuzzle),
+          header: Text(context.l10n.puzzleDailyPuzzle),
           onTap: () {
             final session = ref.read(userSessionStateProvider);
             pushPlatformRoute(
               context,
               rootNavigator: true,
-              builder: (context) => PuzzlesScreen(
+              builder: (context) => PuzzleScreen(
                 theme: PuzzleTheme.mix,
-                puzzleContext: PuzzleContext(
+                initialPuzzleContext: PuzzleContext(
                   theme: PuzzleTheme.mix,
                   puzzle: data,
                   userId: session?.user.id,
                 ),
-                isDailyPuzzle: true,
               ),
-            );
+            ).then((_) {
+              ref.invalidate(nextPuzzleProvider(PuzzleTheme.mix));
+            });
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => BoardPreview(
+        orientation: Side.white.cg,
+        fen: kEmptyFen,
+        header: Text(context.l10n.puzzleDailyPuzzle),
+      ),
       error: (error, stack) => Padding(
         padding: Styles.bodySectionPadding,
         child: const Text('Could not load the daily puzzle.'),
@@ -275,11 +284,13 @@ class _OfflinePuzzlePreview extends ConsumerWidget {
                   pushPlatformRoute(
                     context,
                     rootNavigator: true,
-                    builder: (context) => PuzzlesScreen(
+                    builder: (context) => PuzzleScreen(
                       theme: PuzzleTheme.mix,
-                      puzzleContext: data,
+                      initialPuzzleContext: data,
                     ),
-                  );
+                  ).then((_) {
+                    ref.invalidate(nextPuzzleProvider(PuzzleTheme.mix));
+                  });
                 }
               : null,
         );
@@ -287,7 +298,7 @@ class _OfflinePuzzlePreview extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => Padding(
         padding: Styles.bodySectionPadding,
-        child: const Text('Could not load the daily puzzle.'),
+        child: const Text('Could not load offline puzzles.'),
       ),
     );
   }

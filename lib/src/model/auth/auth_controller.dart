@@ -48,20 +48,24 @@ class AuthController extends _$AuthController {
       },
     );
 
-    result.match(
-      onSuccess: (session) {
+    state = result.fold(
+      (session) {
         ref.read(userSessionStateProvider.notifier).update(session);
+        return const AsyncValue.data(null);
+      },
+      (e, st) {
+        return AsyncValue.error(e, st ?? StackTrace.current);
       },
     );
-
-    state = const AsyncData(null);
   }
 
   Future<void> signOut() async {
     state = const AsyncLoading();
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await ref.read(authRepositoryProvider).signOut();
-    await ref.read(userSessionStateProvider.notifier).delete();
-    state = const AsyncData(null);
+    final result = await ref.read(authRepositoryProvider).signOut();
+    if (result.isValue) {
+      await ref.read(userSessionStateProvider.notifier).delete();
+    }
+    state = result.asAsyncValue;
   }
 }

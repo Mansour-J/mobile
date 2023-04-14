@@ -47,6 +47,7 @@ class PuzzleRepository {
           Uri.parse(
             '$kLichessHost/api/puzzle/batch/${angle.name}?nb=$nb&difficulty=${difficulty.name}',
           ),
+          retryOnError: false,
         )
         .flatMap(_decodeBatchResponse);
   }
@@ -74,6 +75,7 @@ class PuzzleRepository {
                 )
                 .toList(),
           }),
+          retryOnError: false,
         )
         .flatMap(_decodeBatchResponse);
   }
@@ -186,7 +188,7 @@ class PuzzleBatchResponse with _$PuzzleBatchResponse {
 class PuzzleStreakResponse with _$PuzzleStreakResponse {
   const factory PuzzleStreakResponse({
     required Puzzle puzzle,
-    required PuzzleStreak streak,
+    required Streak streak,
   }) = _PuzzleStreakResponse;
 }
 

@@ -7,10 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import 'package:lichess_mobile/src/common/lichess_colors.dart';
-import 'package:lichess_mobile/src/common/lichess_icons.dart';
-import 'package:lichess_mobile/src/common/models.dart';
-import 'package:lichess_mobile/src/common/styles.dart';
+import 'package:lichess_mobile/src/styles/lichess_colors.dart';
+import 'package:lichess_mobile/src/styles/lichess_icons.dart';
+import 'package:lichess_mobile/src/model/common/perf.dart';
+import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/model/game/game_repository_providers.dart';
 import 'package:lichess_mobile/src/ui/game/archived_game_screen.dart';
@@ -20,10 +20,11 @@ import 'package:lichess_mobile/src/ui/user/perf_stats_screen.dart';
 import 'package:lichess_mobile/src/utils/duration.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
-import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/widgets/player.dart';
+
+import 'user_activity.dart';
 
 class UserScreen extends ConsumerWidget {
   const UserScreen({required this.user, super.key});
@@ -100,6 +101,7 @@ class UserScreenBody extends StatelessWidget {
     final list = [
       _Profile(user: user),
       PerfCards(user: user),
+      Activity(user: user),
       RecentGames(user: user),
     ];
 
@@ -279,6 +281,40 @@ class PerfCards extends StatelessWidget {
   }
 }
 
+class Activity extends ConsumerWidget {
+  const Activity({required this.user, super.key});
+
+  final User user;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activity = ref.watch(userActivityProvider(id: user.id));
+
+    return activity.when(
+      data: (data) {
+        return ListSection(
+          header:
+              Text(context.l10n.activityActivity, style: Styles.sectionTitle),
+          hasLeading: true,
+          children: data
+              .where((entry) => entry.isNotEmpty)
+              .take(10)
+              .map((entry) => UserActivityEntry(entry: entry))
+              .toList(),
+        );
+      },
+      error: (error, stackTrace) {
+        debugPrint(
+          'SEVERE: [UserScreen] could not load user activity; $error\n$stackTrace',
+        );
+        return const Text('Could not load user activity');
+      },
+      // TODO show a shimmer loading effect
+      loading: () => const SizedBox.shrink(),
+    );
+  }
+}
+
 class RecentGames extends ConsumerWidget {
   const RecentGames({required this.user, super.key});
 
@@ -347,7 +383,8 @@ class RecentGames extends ConsumerWidget {
         );
         return const Text('Could not load games.');
       },
-      loading: () => const CenterLoadingIndicator(),
+      // TODO show a shimmer loading effect
+      loading: () => const SizedBox.shrink(),
     );
   }
 }

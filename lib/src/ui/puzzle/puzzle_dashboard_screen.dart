@@ -3,10 +3,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:lichess_mobile/src/common/connectivity.dart';
-import 'package:lichess_mobile/src/common/lichess_icons.dart';
-import 'package:lichess_mobile/src/common/styles.dart';
+import 'package:lichess_mobile/src/utils/connectivity.dart';
+import 'package:lichess_mobile/src/styles/lichess_icons.dart';
+import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/model/auth/auth_controller.dart';
+import 'package:lichess_mobile/src/model/auth/user_session.dart';
 import 'package:lichess_mobile/src/ui/puzzle/puzzle_dashboard_widget.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
@@ -22,26 +23,41 @@ import 'puzzle_streak_screen.dart';
 
 final daysProvider = StateProvider<Days>((ref) => Days.month);
 
-class PuzzleDashboardScreen extends StatelessWidget {
+class PuzzleDashboardScreen extends ConsumerStatefulWidget {
   const PuzzleDashboardScreen({super.key});
 
   @override
+  ConsumerState<PuzzleDashboardScreen> createState() =>
+      _PuzzleDashboardScreenState();
+}
+
+class _PuzzleDashboardScreenState extends ConsumerState<PuzzleDashboardScreen> {
+  final _androidRefreshKey = GlobalKey<RefreshIndicatorState>();
+
+  @override
   Widget build(BuildContext context) {
+    final session = ref.watch(authSessionProvider);
     return PlatformWidget(
-      androidBuilder: _androidBuilder,
-      iosBuilder: _iosBuilder,
+      androidBuilder: (context) => _androidBuilder(context, session),
+      iosBuilder: (context) => _iosBuilder(context, session),
     );
   }
 
-  Widget _androidBuilder(BuildContext context) {
+  Widget _androidBuilder(BuildContext context, UserSession? userSession) {
     return Scaffold(
       appBar:
           AppBar(title: Text(context.l10n.puzzles), actions: [DaysSelector()]),
-      body: const Center(child: _Body()),
+      body: userSession != null
+          ? RefreshIndicator(
+              key: _androidRefreshKey,
+              onRefresh: _refreshData,
+              child: Center(child: _Body(userSession)),
+            )
+          : Center(child: _Body(userSession)),
     );
   }
 
-  Widget _iosBuilder(BuildContext context) {
+  Widget _iosBuilder(BuildContext context, UserSession? userSession) {
     return CupertinoPageScaffold(
       child: CustomScrollView(
         slivers: [
@@ -49,25 +65,35 @@ class PuzzleDashboardScreen extends StatelessWidget {
             largeTitle: Text(context.l10n.puzzles),
             trailing: DaysSelector(),
           ),
-          const SliverSafeArea(
+          if (userSession != null)
+            CupertinoSliverRefreshControl(
+              onRefresh: _refreshData,
+            ),
+          SliverSafeArea(
             top: false,
-            sliver: _Body(),
+            sliver: _Body(userSession),
           ),
         ],
       ),
     );
   }
+
+  Future<void> _refreshData() {
+    return ref
+        .refresh(puzzleDashboardProvider(ref.read(daysProvider).days).future);
+  }
 }
 
 class _Body extends ConsumerWidget {
-  const _Body();
+  const _Body(this.session);
+
+  final UserSession? session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     const theme = PuzzleTheme.mix;
     final nextPuzzle = ref.watch(nextPuzzleProvider(theme));
     final connectivity = ref.watch(connectivityChangesProvider);
-    final session = ref.watch(authSessionProvider);
 
     final content = [
       Padding(
@@ -124,8 +150,16 @@ class _Body extends ConsumerWidget {
         padding: Styles.bodySectionBottomPadding,
         child: CardButton(
           icon: const Icon(LichessIcons.streak, size: 44),
-          title: const Text('Puzzle Streak'),
-          subtitle: Text(context.l10n.puzzleStreakDescription),
+          title: Text(
+            'Puzzle Streak',
+            style: Styles.sectionTitle,
+          ),
+          subtitle: Text(
+            context.l10n.puzzleStreakDescription.characters
+                    .takeWhile((c) => c != '.')
+                    .toString() +
+                (context.l10n.puzzleStreakDescription.contains('.') ? '.' : ''),
+          ),
           onTap: connectivity.when(
             data: (data) => data.isOnline
                 ? () {
@@ -182,7 +216,7 @@ class DaysSelector extends ConsumerWidget {
     final day = ref.watch(daysProvider);
     return session != null
         ? AppBarTextButton(
-            onPressed: () => showChoicesPicker(
+            onPressed: () => showChoicePicker(
               context,
               choices: Days.values,
               selectedItem: day,

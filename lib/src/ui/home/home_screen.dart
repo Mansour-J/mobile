@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dartchess/dartchess.dart';
 
 import 'package:lichess_mobile/src/constants.dart';
-import 'package:lichess_mobile/src/common/styles.dart';
-import 'package:lichess_mobile/src/common/connectivity.dart';
+import 'package:lichess_mobile/src/styles/styles.dart';
+import 'package:lichess_mobile/src/utils/connectivity.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
@@ -33,20 +33,22 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _androidRefreshKey = GlobalKey<RefreshIndicatorState>();
 
-  bool isOnline = true;
+  bool wasOnline = true;
+  bool hasRefreshed = false;
 
   @override
   Widget build(BuildContext context) {
     ref.listen(connectivityChangesProvider, (_, connectivity) {
-      // Refresh the data only when the user comes back online
+      // Refresh the data only once if it was offline and is now online
       if (!connectivity.isRefreshing && connectivity.hasValue) {
-        final newOnlineValue = connectivity.value!.isOnline;
+        final isNowOnline = connectivity.value!.isOnline;
 
-        if (isOnline == false && newOnlineValue == true) {
+        if (!hasRefreshed && !wasOnline && isNowOnline) {
+          hasRefreshed = true;
           _refreshData();
         }
 
-        isOnline = newOnlineValue;
+        wasOnline = isNowOnline;
       }
     });
 

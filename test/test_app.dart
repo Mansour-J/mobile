@@ -15,8 +15,8 @@ import 'package:soundpool/soundpool.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:lichess_mobile/src/app_dependencies.dart';
-import 'package:lichess_mobile/src/common/shared_preferences.dart';
-import 'package:lichess_mobile/src/common/sound_service.dart';
+import 'package:lichess_mobile/src/db/shared_preferences.dart';
+import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
 import 'package:lichess_mobile/src/model/auth/auth_repository.dart';
 import 'package:lichess_mobile/src/model/auth/session_storage.dart';
 import 'package:lichess_mobile/src/model/auth/user_session.dart';
@@ -57,10 +57,15 @@ Future<Widget> buildTestApp(
 
   return ProviderScope(
     overrides: [
+      // ignore: scoped_providers_should_specify_dependencies
       soundServiceProvider.overrideWithValue(FakeSoundService()),
+      // ignore: scoped_providers_should_specify_dependencies
       sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      // ignore: scoped_providers_should_specify_dependencies
       authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+      // ignore: scoped_providers_should_specify_dependencies
       sessionStorageProvider.overrideWithValue(FakeSessionStorage(userSession)),
+      // ignore: scoped_providers_should_specify_dependencies
       appDependenciesProvider.overrideWith((ref) {
         return AppDependencies(
           packageInfo: PackageInfo(

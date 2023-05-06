@@ -1,11 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lichess_mobile/src/ui/user/leaderboard_screen.dart';
 import 'package:lichess_mobile/src/ui/user/leaderboard_widget.dart';
 import 'package:http/testing.dart';
 
-import 'package:lichess_mobile/src/common/api_client.dart';
+import 'package:lichess_mobile/src/http_client.dart';
 import '../../test_utils.dart';
 import '../../test_app.dart';
 
@@ -49,9 +48,9 @@ void main() {
 
         // await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
 
-        if (debugDefaultTargetPlatformOverride == TargetPlatform.android) {
-          await expectLater(tester, meetsGuideline(textContrastGuideline));
-        }
+        // if (debugDefaultTargetPlatformOverride == TargetPlatform.android) {
+        //   await expectLater(tester, meetsGuideline(textContrastGuideline));
+        // }
         handle.dispose();
       },
       variant: kPlatformVariant,

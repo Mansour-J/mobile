@@ -5,14 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dartchess/dartchess.dart';
 
 import 'package:lichess_mobile/src/constants.dart';
-import 'package:lichess_mobile/src/common/styles.dart';
-import 'package:lichess_mobile/src/common/connectivity.dart';
+import 'package:lichess_mobile/src/styles/styles.dart';
+import 'package:lichess_mobile/src/utils/connectivity.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
 import 'package:lichess_mobile/src/widgets/board_preview.dart';
 import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
+import 'package:lichess_mobile/src/widgets/bottom_navigation.dart';
 import 'package:lichess_mobile/src/model/auth/auth_controller.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
@@ -79,6 +80,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _iosBuilder(BuildContext context) {
     return CupertinoPageScaffold(
       child: CustomScrollView(
+        controller: homeScrollController,
         slivers: [
           const CupertinoSliverNavigationBar(
             largeTitle: Text('Home'),
@@ -136,6 +138,7 @@ class _HomeBody extends ConsumerWidget {
         if (data.isOnline) {
           return defaultTargetPlatform == TargetPlatform.android
               ? ListView(
+                  controller: homeScrollController,
                   children: [
                     const _DailyPuzzle(),
                     LeaderboardWidget(),
@@ -150,6 +153,7 @@ class _HomeBody extends ConsumerWidget {
         } else {
           return defaultTargetPlatform == TargetPlatform.android
               ? ListView(
+                  controller: homeScrollController,
                   children: const [
                     _OfflinePuzzlePreview(),
                   ],

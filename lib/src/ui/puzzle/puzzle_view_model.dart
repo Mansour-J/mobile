@@ -5,14 +5,15 @@ import 'package:collection/collection.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:dartchess/dartchess.dart';
+import 'package:easy_debounce/easy_debounce.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart'
     hide Tuple2;
 
-import 'package:lichess_mobile/src/common/move_feedback.dart';
-import 'package:lichess_mobile/src/common/sound_service.dart';
-import 'package:lichess_mobile/src/common/models.dart';
-import 'package:lichess_mobile/src/common/tree.dart';
-import 'package:lichess_mobile/src/common/uci.dart';
+import 'package:lichess_mobile/src/model/common/service/move_feedback.dart';
+import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
+import 'package:lichess_mobile/src/model/common/chess.dart';
+import 'package:lichess_mobile/src/model/common/tree.dart';
+import 'package:lichess_mobile/src/model/common/uci.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_streak.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_repository.dart';
@@ -21,6 +22,7 @@ import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_preferences.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_session.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_difficulty.dart';
+import 'package:lichess_mobile/src/model/engine/engine_evaluation.dart';
 
 part 'puzzle_view_model.g.dart';
 part 'puzzle_view_model.freezed.dart';
@@ -46,6 +48,43 @@ class PuzzleViewModel extends _$PuzzleViewModel {
     });
 
     return _loadNewContext(initialContext, initialStreak);
+  }
+
+  PuzzleViewModelState _loadNewContext(
+    PuzzleContext context,
+    PuzzleStreak? streak,
+  ) {
+    final root = Root.fromPgn(context.puzzle.game.pgn);
+    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Node;
+
+    // play first move after 1 second
+    _firstMoveTimer = Timer(const Duration(seconds: 1), () {
+      _setPath(state.initialPath);
+    });
+
+    final initialPath = UciPath.fromId(_gameTree.children.first.id);
+
+    // preload next streak puzzle
+    if (streak != null) {
+      _nextPuzzleFuture = _fetchNextStreakPuzzle(streak);
+    }
+
+    return PuzzleViewModelState(
+      puzzle: context.puzzle,
+      glicko: context.glicko,
+      mode: PuzzleMode.play,
+      initialFen: _gameTree.fen,
+      initialPath: initialPath,
+      currentPath: UciPath.empty,
+      nodeList: IList([ViewNode.fromNode(_gameTree)]),
+      pov: _gameTree.nodeAt(initialPath).ply.isEven ? Side.white : Side.black,
+      resultSent: false,
+      isChangingDifficulty: false,
+      isLocalEvalEnabled: false,
+      streak: streak,
+      nextPuzzleStreakFetchError: false,
+      nextPuzzleStreakFetchIsRetrying: false,
+    );
   }
 
   Future<void> onUserMove(Move move) async {
@@ -82,7 +121,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
         state = state.copyWith(
           feedback: PuzzleFeedback.bad,
         );
-        _onComplete(PuzzleResult.lose);
+        _onFailOrWin(PuzzleResult.lose);
         if (initialStreak == null) {
           await Future<void>.delayed(const Duration(milliseconds: 500));
           _setPath(state.currentPath.penultimate);
@@ -110,7 +149,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
       nodeList: IList(_gameTree.nodesOn(state.currentPath)),
     );
 
-    _onComplete(PuzzleResult.lose);
+    _onFailOrWin(PuzzleResult.lose);
 
     state = state.copyWith(
       mode: PuzzleMode.view,
@@ -146,6 +185,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
         )
         .setDifficulty(difficulty);
 
+    // ignore: avoid_manual_providers_as_generated_provider_dependency
     final nextPuzzle = await ref.read(defaultPuzzleServiceProvider).resetBatch(
           userId: initialContext.userId,
           angle: initialContext.theme,
@@ -158,7 +198,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
     return nextPuzzle;
   }
 
-  void continueWithNextPuzzle(PuzzleContext nextContext) {
+  void loadPuzzle(PuzzleContext nextContext) {
     state = _loadNewContext(nextContext, state.streak);
   }
 
@@ -205,41 +245,6 @@ class PuzzleViewModel extends _$PuzzleViewModel {
     return result;
   }
 
-  PuzzleViewModelState _loadNewContext(
-    PuzzleContext context,
-    PuzzleStreak? streak,
-  ) {
-    final root = Root.fromPgn(context.puzzle.game.pgn);
-    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Node;
-
-    // play first move after 1 second
-    _firstMoveTimer = Timer(const Duration(seconds: 1), () {
-      _setPath(state.initialPath);
-    });
-
-    final initialPath = UciPath.fromId(_gameTree.children.first.id);
-
-    // preload next streak puzzle
-    if (streak != null) {
-      _nextPuzzleFuture = _fetchNextStreakPuzzle(streak);
-    }
-
-    return PuzzleViewModelState(
-      puzzle: context.puzzle,
-      glicko: context.glicko,
-      mode: PuzzleMode.play,
-      initialPath: initialPath,
-      currentPath: UciPath.empty,
-      nodeList: IList([ViewNode.fromNode(_gameTree)]),
-      pov: _gameTree.nodeAt(initialPath).ply.isEven ? Side.white : Side.black,
-      resultSent: false,
-      isChangingDifficulty: false,
-      streak: streak,
-      nextPuzzleStreakFetchError: false,
-      nextPuzzleStreakFetchIsRetrying: false,
-    );
-  }
-
   FutureResult<PuzzleContext?> _fetchNextStreakPuzzle(PuzzleStreak streak) {
     return streak.nextId != null
         ? ref.read(puzzleRepositoryProvider).fetch(streak.nextId!).map(
@@ -265,10 +270,10 @@ class PuzzleViewModel extends _$PuzzleViewModel {
     state = state.copyWith(
       mode: PuzzleMode.view,
     );
-    await _onComplete(state.result ?? PuzzleResult.win);
+    await _onFailOrWin(state.result ?? PuzzleResult.win);
   }
 
-  Future<void> _onComplete(PuzzleResult result) async {
+  Future<void> _onFailOrWin(PuzzleResult result) async {
     if (state.resultSent) return;
 
     state = state.copyWith(
@@ -279,6 +284,8 @@ class PuzzleViewModel extends _$PuzzleViewModel {
     final sessionNotifier =
         puzzleSessionProvider(initialContext.userId, initialContext.theme)
             .notifier;
+
+    // ignore: avoid_manual_providers_as_generated_provider_dependency
     final service = ref.read(defaultPuzzleServiceProvider);
     final soundService = ref.read(soundServiceProvider);
 
@@ -293,19 +300,21 @@ class PuzzleViewModel extends _$PuzzleViewModel {
         ),
       );
 
-      final rounds = next?.rounds;
-      if (rounds != null) {
-        ref.read(sessionNotifier).setRatingDiffs(rounds);
-      }
-
       state = state.copyWith(
         nextContext: next,
       );
 
+      // ignore: avoid_manual_providers_as_generated_provider_dependency
       ref.read(sessionNotifier).addAttempt(
             state.puzzle.puzzle.id,
             win: result == PuzzleResult.win,
           );
+
+      final rounds = next?.rounds;
+      if (rounds != null) {
+        // ignore: avoid_manual_providers_as_generated_provider_dependency
+        ref.read(sessionNotifier).setRatingDiffs(rounds);
+      }
     } else {
       // one fail and streak is over
       if (result == PuzzleResult.lose) {
@@ -334,7 +343,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
               if (nextContext != null) {
                 await Future<void>.delayed(const Duration(milliseconds: 250));
                 soundService.play(Sound.confirmation);
-                continueWithNextPuzzle(nextContext);
+                loadPuzzle(nextContext);
               } else {
                 // no more puzzle
                 state = state.copyWith.streak!(
@@ -354,6 +363,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
   }
 
   void _setPath(UciPath path) {
+    final pathChange = state.currentPath != path;
     final newNodeList = IList(_gameTree.nodesOn(path));
     final sanMove = newNodeList.last.sanMove;
     final isForward = path.size > state.currentPath.size;
@@ -369,6 +379,47 @@ class PuzzleViewModel extends _$PuzzleViewModel {
       currentPath: path,
       nodeList: newNodeList,
       lastMove: sanMove.move,
+    );
+
+    if (pathChange) {
+      _startEngineEval();
+    }
+  }
+
+  void toggleLocalEvaluation() {
+    state = state.copyWith(
+      isLocalEvalEnabled: !state.isLocalEvalEnabled,
+    );
+    if (state.isLocalEvalEnabled) {
+      _startEngineEval();
+    } else {
+      ref
+          .read(
+            engineEvaluationProvider(state.evaluationContext).notifier,
+          )
+          .stop();
+    }
+  }
+
+  void _startEngineEval() {
+    if (!state.isEngineEnabled) return;
+    EasyDebounce.debounce(
+      'start-engine-eval',
+      const Duration(milliseconds: 50),
+      () => ref
+          .read(
+            engineEvaluationProvider(state.evaluationContext).notifier,
+          )
+          .start(
+            state.currentPath,
+            state.nodeList.map(Step.fromNode),
+            shouldEmit: (work) => work.path == state.currentPath,
+          )
+          ?.forEach((t) {
+        _gameTree.updateAt(t.item1.path, (node) {
+          node.eval = t.item2;
+        });
+      }),
     );
   }
 
@@ -399,7 +450,7 @@ class PuzzleViewModel extends _$PuzzleViewModel {
           previous.item2.add(
             Node(
               id: UciCharPair.fromMove(move),
-              ply: fromPly + index,
+              ply: fromPly + index + 1,
               fen: newPos.fen,
               position: newPos,
               sanMove: SanMove(newSan, move),
@@ -426,6 +477,7 @@ class PuzzleViewModelState with _$PuzzleViewModelState {
     required Puzzle puzzle,
     required PuzzleGlicko? glicko,
     required PuzzleMode mode,
+    required String initialFen,
     required UciPath initialPath,
     required UciPath currentPath,
     required Side pov,
@@ -433,6 +485,7 @@ class PuzzleViewModelState with _$PuzzleViewModelState {
     Move? lastMove,
     PuzzleResult? result,
     PuzzleFeedback? feedback,
+    required bool isLocalEvalEnabled,
     required bool resultSent,
     required bool isChangingDifficulty,
     PuzzleContext? nextContext,
@@ -442,6 +495,15 @@ class PuzzleViewModelState with _$PuzzleViewModelState {
     required bool nextPuzzleStreakFetchError,
     required bool nextPuzzleStreakFetchIsRetrying,
   }) = _PuzzleScreenState;
+
+  bool get isEngineEnabled {
+    return mode == PuzzleMode.view && isLocalEvalEnabled;
+  }
+
+  EvaluationContext get evaluationContext => EvaluationContext(
+        initialFen: initialFen,
+        contextId: puzzle.puzzle.id,
+      );
 
   ViewNode get node => nodeList.last;
   Position get position => nodeList.last.position;

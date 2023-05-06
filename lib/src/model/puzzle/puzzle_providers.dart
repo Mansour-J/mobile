@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart'
     hide Tuple2;
 
+import 'package:lichess_mobile/src/model/common/id.dart';
 import 'package:lichess_mobile/src/model/auth/auth_controller.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
@@ -18,6 +19,7 @@ Future<PuzzleContext?> nextPuzzle(
   PuzzleTheme theme,
 ) {
   final session = ref.watch(authSessionProvider);
+  // ignore: avoid_manual_providers_as_generated_provider_dependency
   final puzzleService = ref.watch(defaultPuzzleServiceProvider);
   final userId = session?.user.id;
   return puzzleService.nextPuzzle(
@@ -30,6 +32,13 @@ Future<PuzzleContext?> nextPuzzle(
 Future<PuzzleStreakResponse> streak(StreakRef ref) {
   final repo = ref.watch(puzzleRepositoryProvider);
   return Result.release(repo.streak());
+}
+
+// TODO when history database is available should first try to fetch from there
+@Riverpod(keepAlive: true)
+Future<Puzzle> puzzle(PuzzleRef ref, PuzzleId id) {
+  final repo = ref.watch(puzzleRepositoryProvider);
+  return Result.release(repo.fetch(id));
 }
 
 @Riverpod(keepAlive: true)

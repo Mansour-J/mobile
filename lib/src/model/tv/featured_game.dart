@@ -3,8 +3,8 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:dartchess/dartchess.dart';
 
-import 'package:lichess_mobile/src/common/models.dart';
-import 'package:lichess_mobile/src/common/sound_service.dart';
+import 'package:lichess_mobile/src/model/common/id.dart';
+import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
 import 'featured_position.dart';
 import 'featured_player.dart';
 import 'tv_event.dart';
@@ -42,6 +42,7 @@ class FeaturedGame extends _$FeaturedGame {
     final tvRepository = ref.watch(tvRepositoryProvider);
     final stream = tvRepository.tvFeed().asBroadcastStream();
 
+    _streamSub?.cancel();
     _streamSub = stream.listen((event) {
       if (event is TvFeaturedEvent) {
         _onFeaturedEvent(event);

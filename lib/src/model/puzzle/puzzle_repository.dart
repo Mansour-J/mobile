@@ -10,9 +10,12 @@ import 'package:dartchess/dartchess.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 
 import 'package:lichess_mobile/src/constants.dart';
-import 'package:lichess_mobile/src/common/api_client.dart';
-import 'package:lichess_mobile/src/common/models.dart';
+import 'package:lichess_mobile/src/model/auth/auth_client.dart';
 import 'package:lichess_mobile/src/utils/json.dart';
+import 'package:lichess_mobile/src/model/common/id.dart';
+import 'package:lichess_mobile/src/model/common/chess.dart';
+import 'package:lichess_mobile/src/model/common/perf.dart';
+import 'package:lichess_mobile/src/model/common/time_increment.dart';
 import 'puzzle.dart';
 import 'puzzle_streak.dart';
 import 'puzzle_theme.dart';
@@ -23,7 +26,7 @@ part 'puzzle_repository.g.dart';
 
 @Riverpod(keepAlive: true)
 PuzzleRepository puzzleRepository(PuzzleRepositoryRef ref) {
-  final apiClient = ref.watch(apiClientProvider);
+  final apiClient = ref.watch(authClientProvider);
   return PuzzleRepository(Logger('PuzzleRepository'), apiClient: apiClient);
 }
 
@@ -34,7 +37,7 @@ class PuzzleRepository {
     required this.apiClient,
   }) : _log = log;
 
-  final ApiClient apiClient;
+  final AuthClient apiClient;
   final Logger _log;
 
   FutureResult<PuzzleBatchResponse> selectBatch({
@@ -83,7 +86,7 @@ class PuzzleRepository {
   FutureResult<Puzzle> fetch(PuzzleId id) {
     return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/$id')).flatMap(
           (response) => readJsonObject(
-            response.body,
+            response,
             mapper: _puzzleFromJson,
             logger: _log,
           ),
@@ -95,7 +98,7 @@ class PuzzleRepository {
         .get(Uri.parse('$kLichessHost/api/streak'))
         .flatMap((response) {
       return readJsonObject(
-        response.body,
+        response,
         mapper: (Map<String, dynamic> json) {
           return PuzzleStreakResponse(
             puzzle: _puzzleFromPick(pick(json).required()),
@@ -120,7 +123,7 @@ class PuzzleRepository {
   FutureResult<Puzzle> daily() {
     return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/daily')).flatMap(
           (response) => readJsonObject(
-            response.body,
+            response,
             mapper: _puzzleFromJson,
             logger: _log,
           ).map(
@@ -136,7 +139,7 @@ class PuzzleRepository {
         .get(Uri.parse('$kLichessHost/api/puzzle/dashboard/$days'))
         .flatMap((response) {
       return readJsonObject(
-        response.body,
+        response,
         mapper: _puzzleDashboardFromJson,
         logger: _log,
       );
@@ -145,7 +148,7 @@ class PuzzleRepository {
 
   Result<PuzzleBatchResponse> _decodeBatchResponse(http.Response response) {
     return readJsonObject(
-      response.body,
+      response,
       mapper: (Map<String, dynamic> json) {
         final puzzles = json['puzzles'];
         if (puzzles is! List<dynamic>) {

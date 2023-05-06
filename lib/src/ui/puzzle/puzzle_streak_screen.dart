@@ -8,9 +8,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:result_extensions/result_extensions.dart';
 
 import 'package:lichess_mobile/src/constants.dart';
-import 'package:lichess_mobile/src/common/styles.dart';
-import 'package:lichess_mobile/src/common/lichess_icons.dart';
-import 'package:lichess_mobile/src/common/lichess_colors.dart';
+import 'package:lichess_mobile/src/styles/styles.dart';
+import 'package:lichess_mobile/src/styles/lichess_icons.dart';
+import 'package:lichess_mobile/src/styles/lichess_colors.dart';
 import 'package:lichess_mobile/src/widgets/adaptive_dialog.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/table_board_layout.dart';
@@ -23,6 +23,7 @@ import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
+import 'package:lichess_mobile/src/ui/settings/toggle_sound_button.dart';
 
 import 'puzzle_view_model.dart';
 import 'puzzle_feedback_widget.dart';
@@ -153,6 +154,7 @@ class _Body extends ConsumerWidget {
                               ? cg.InteractableSide.white
                               : cg.InteractableSide.black,
                   fen: puzzleState.fen,
+                  isCheck: puzzleState.position.isCheck,
                   lastMove: puzzleState.lastMove?.cg,
                   sideToMove: puzzleState.position.turn.cg,
                   validMoves: puzzleState.validMoves,
@@ -389,7 +391,7 @@ class _RetryFetchPuzzleDialog extends ConsumerWidget {
             Navigator.of(context).pop();
           }
           if (data != null) {
-            ref.read(viewModelProvider.notifier).continueWithNextPuzzle(data);
+            ref.read(viewModelProvider.notifier).loadPuzzle(data);
           }
         },
       );

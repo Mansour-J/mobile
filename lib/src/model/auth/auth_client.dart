@@ -54,14 +54,14 @@ class AuthClient {
     this._client,
     this._crashlytics, {
     List<Duration> retryDelays = defaultRetries,
-  })  : _retryClient = RetryClient.withDelays(
+  }) : _retryClient = RetryClient.withDelays(
           _client,
           retryDelays,
-        ),
-        _retryClientOnError = RetryClient.withDelays(
-          _client,
-          retryDelays,
-          whenError: (error, _) async => error is SocketException,
+          whenError: (error, _) async =>
+              error is SocketException ||
+              error.toString().contains(
+                    'Connection closed before full header was received',
+                  ),
         ) {
     _log.info('Creating new AuthClient.');
   }
@@ -69,7 +69,6 @@ class AuthClient {
   final Logger _log;
   final Client _client;
   final RetryClient _retryClient;
-  final RetryClient _retryClientOnError;
   final FirebaseCrashlytics _crashlytics;
 
   /// Makes app user agent
@@ -82,15 +81,20 @@ class AuthClient {
     bool retryOnError = true,
   }) =>
       Result.capture(
-        (retryOnError ? _retryClientOnError : _retryClient)
-            .get(url, headers: headers),
+        (retryOnError ? _retryClient : _client).get(url, headers: headers),
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
-        _crashlytics.recordError(
-          error,
-          stackTrace,
-          reason: 'a non-fatal http request error',
-        );
+        if (kReleaseMode) {
+          _crashlytics.recordError(
+            error,
+            stackTrace,
+            reason: 'a non-fatal http request error',
+            information: [
+              'url: $url',
+              'headers: $headers',
+            ],
+          );
+        }
         return GenericIOException();
       }).flatMap(
         (response) => _validateResponseStatusResult('GET', url, response),
@@ -104,15 +108,21 @@ class AuthClient {
     bool retryOnError = true,
   }) =>
       Result.capture(
-        (retryOnError ? _retryClientOnError : _retryClient)
+        (retryOnError ? _retryClient : _client)
             .post(url, headers: headers, body: body, encoding: encoding),
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
-        _crashlytics.recordError(
-          error,
-          stackTrace,
-          reason: 'a non-fatal http request error',
-        );
+        if (kReleaseMode) {
+          _crashlytics.recordError(
+            error,
+            stackTrace,
+            reason: 'a non-fatal http request error',
+            information: [
+              'url: $url',
+              'headers: $headers',
+            ],
+          );
+        }
         return GenericIOException();
       }).flatMap(
         (response) => _validateResponseStatusResult('POST', url, response),
@@ -126,10 +136,21 @@ class AuthClient {
     bool retryOnError = true,
   }) =>
       Result.capture(
-        (retryOnError ? _retryClientOnError : _retryClient)
+        (retryOnError ? _retryClient : _client)
             .delete(url, headers: headers, body: body, encoding: encoding),
       ).mapError((error, stackTrace) {
         _log.severe('Request error', error, stackTrace);
+        if (kReleaseMode) {
+          _crashlytics.recordError(
+            error,
+            stackTrace,
+            reason: 'a non-fatal http request error',
+            information: [
+              'url: $url',
+              'headers: $headers',
+            ],
+          );
+        }
         return GenericIOException();
       }).flatMap(
         (response) => _validateResponseStatusResult('DELETE', url, response),
@@ -157,13 +178,22 @@ class AuthClient {
     Uri url,
     T response,
   ) {
-    if (response.statusCode >= 500) {
-      _log.severe('$method $url responded with status ${response.statusCode}');
-    } else if (response.statusCode >= 400) {
+    if (response.statusCode >= 400) {
       final body = response is Response ? response.body : '';
       _log.warning(
         '$method $url responded with status ${response.statusCode}\n$body',
       );
+      if (kReleaseMode) {
+        _crashlytics.recordError(
+          'Server error: ${response.statusCode}',
+          null,
+          reason: 'server error',
+          information: [
+            'url: $url',
+            'method: $method',
+          ],
+        );
+      }
     }
 
     return response.statusCode < 400
@@ -174,13 +204,17 @@ class AuthClient {
                 ? Result.error(UnauthorizedException())
                 : response.statusCode == 403
                     ? Result.error(ForbiddenException())
-                    : Result.error(ApiRequestException());
+                    : Result.error(
+                        ApiRequestException(
+                          response.statusCode,
+                          response is Response ? response.body : '',
+                        ),
+                      );
   }
 
   void close() {
     _log.info('Closing AuthClient.');
     _client.close();
-    _retryClient.close();
   }
 }
 
@@ -210,7 +244,6 @@ class _AuthClient extends BaseClient {
 }
 
 const defaultRetries = [
-  Duration(milliseconds: 200),
   Duration(milliseconds: 300),
   Duration(milliseconds: 500),
   Duration(milliseconds: 800),

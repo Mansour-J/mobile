@@ -15,7 +15,6 @@ import 'package:lichess_mobile/src/utils/json.dart';
 import 'package:lichess_mobile/src/model/common/id.dart';
 import 'package:lichess_mobile/src/model/common/chess.dart';
 import 'package:lichess_mobile/src/model/common/perf.dart';
-import 'package:lichess_mobile/src/model/common/time_increment.dart';
 import 'puzzle.dart';
 import 'storm.dart';
 import 'puzzle_streak.dart';
@@ -199,6 +198,25 @@ class PuzzleRepository {
     });
   }
 
+  FutureResult<IList<PuzzleHistoryEntry>> puzzleActivity(
+    int max, {
+    DateTime? before,
+  }) {
+    final beforeQuery =
+        before != null ? '&before=${before.millisecondsSinceEpoch}' : '';
+    return apiClient
+        .get(
+          Uri.parse('$kLichessHost/api/puzzle/activity?max=$max$beforeQuery'),
+        )
+        .flatMap(
+          (response) => readNdJsonList(
+            response,
+            mapper: _puzzleActivityFromJson,
+            logger: _log,
+          ),
+        );
+  }
+
   Result<PuzzleBatchResponse> _decodeBatchResponse(http.Response response) {
     return readJsonObject(
       response,
@@ -258,6 +276,9 @@ class PuzzleStormResponse with _$PuzzleStormResponse {
 }
 
 // --
+
+PuzzleHistoryEntry _puzzleActivityFromJson(Map<String, dynamic> json) =>
+    _historyPuzzleFromPick(pick(json).required());
 
 Puzzle _puzzleFromJson(Map<String, dynamic> json) =>
     _puzzleFromPick(pick(json).required());
@@ -334,11 +355,6 @@ PuzzleGame _puzzleGameFromPick(RequiredPick pick) {
           .firstWhere((p) => p.side == Side.black),
     ),
     pgn: pick('pgn').asStringOrThrow(),
-    clock: pick('clock').letOrNull(
-      (p) =>
-          TimeIncrement.fromString(p.asStringOrThrow()) ??
-          const TimeIncrement(0, 0),
-    ),
   );
 }
 
@@ -348,6 +364,17 @@ PuzzleGamePlayer _puzzlePlayerFromPick(RequiredPick pick) {
     userId: pick('userId').asUserIdOrThrow(),
     side: pick('color').asSideOrThrow(),
     title: pick('title').asStringOrNull(),
+  );
+}
+
+PuzzleHistoryEntry _historyPuzzleFromPick(RequiredPick pick) {
+  return PuzzleHistoryEntry(
+    win: pick('win').asBoolOrThrow(),
+    date: pick('date').asDateTimeFromMillisecondsOrThrow(),
+    rating: pick('puzzle', 'rating').asIntOrThrow(),
+    id: pick('puzzle', 'id').asPuzzleIdOrThrow(),
+    fen: pick('puzzle', 'fen').asStringOrThrow(),
+    lastMove: pick('puzzle', 'lastMove').asUciMoveOrThrow(),
   );
 }
 

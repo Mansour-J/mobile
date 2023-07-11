@@ -31,7 +31,7 @@ class FatButton extends StatelessWidget {
       excludeSemantics: true,
       child: defaultTargetPlatform == TargetPlatform.iOS
           ? CupertinoButton.filled(onPressed: onPressed, child: child)
-          : ElevatedButton(
+          : FilledButton(
               onPressed: onPressed,
               style: ElevatedButton.styleFrom(
                 textStyle: const TextStyle(fontSize: 18),
@@ -59,8 +59,6 @@ class SecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cupertinoBrightness =
-        CupertinoTheme.maybeBrightnessOf(context) ?? Brightness.light;
     return Semantics(
       container: true,
       enabled: true,
@@ -70,18 +68,7 @@ class SecondaryButton extends StatelessWidget {
       child: defaultTargetPlatform == TargetPlatform.iOS
           ? CupertinoButton(
               onPressed: onPressed,
-              color: CupertinoColors.secondarySystemFill,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              child: DefaultTextStyle.merge(
-                style: TextStyle(
-                  color: cupertinoBrightness == Brightness.light
-                      ? Colors.black
-                      : Colors.white,
-                  // fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                ),
-                child: child,
-              ),
+              child: child,
             )
           : OutlinedButton(
               onPressed: onPressed,
@@ -248,6 +235,7 @@ class BottomBarButton extends StatelessWidget {
     required this.label,
     required this.shortLabel,
     required this.onTap,
+    this.showAndroidTooltip = true,
     this.highlighted = false,
     this.showAndroidShortLabel = false,
   });
@@ -258,6 +246,7 @@ class BottomBarButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool highlighted;
   final bool showAndroidShortLabel;
+  final bool showAndroidTooltip;
 
   bool get enabled => onTap != null;
 
@@ -282,7 +271,7 @@ class BottomBarButton extends StatelessWidget {
                 : IconButton(
                     onPressed: onTap,
                     icon: Icon(icon),
-                    tooltip: label,
+                    tooltip: showAndroidTooltip ? label : null,
                     color: highlighted ? themeData.colorScheme.primary : null,
                   ),
           ),
@@ -420,6 +409,62 @@ class _CardButtonState extends State<CardButton> {
   }
 }
 
+/// InkWell that adapts to the iOS platform.
+///
+/// Used to create a button that shows a ripple on Android and a highlight on iOS.
+class AdaptiveInkWell extends StatefulWidget {
+  const AdaptiveInkWell({
+    required this.child,
+    this.onTap,
+    this.borderRadius,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final BorderRadius? borderRadius;
+
+  @override
+  State<AdaptiveInkWell> createState() => _AdaptiveInkWellState();
+}
+
+class _AdaptiveInkWellState extends State<AdaptiveInkWell> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return InkWell(
+          onTap: widget.onTap,
+          borderRadius: widget.borderRadius,
+          child: widget.child,
+        );
+      case TargetPlatform.iOS:
+        return GestureDetector(
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapCancel: () => setState(() => _isPressed = false),
+          onTapUp: (_) => setState(() => _isPressed = false),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: widget.borderRadius,
+              color: _isPressed
+                  ? CupertinoDynamicColor.resolve(
+                      CupertinoColors.systemGrey4,
+                      context,
+                    )
+                  : null,
+            ),
+            child: widget.child,
+          ),
+        );
+      default:
+        assert(false, 'Unexpected platform $defaultTargetPlatform');
+        return const SizedBox.shrink();
+    }
+  }
+}
+
 /// Button to repeatedly call a funtion, triggered after a long press.
 ///
 /// This widget is just a wrapper, the visuals are delegated to the child widget.
@@ -433,13 +478,9 @@ class RepeatButton extends StatefulWidget {
     required this.onLongPress,
     required this.child,
     this.triggerDelays = const [
-      Duration(milliseconds: 600),
-      Duration(milliseconds: 400),
-      Duration(milliseconds: 250),
-      Duration(milliseconds: 200),
+      Duration(milliseconds: 500),
+      Duration(milliseconds: 300),
       Duration(milliseconds: 150),
-      Duration(milliseconds: 100),
-      Duration(milliseconds: 80),
     ],
     this.holdDelay = const Duration(milliseconds: 50),
   });
@@ -501,5 +542,58 @@ class _RepeatButtonState extends State<RepeatButton> {
       onLongPressUp: _onPressEnd,
       child: widget.child,
     );
+  }
+}
+
+/// Platform agnostic icon button
+///
+/// Optionally provide a bool to highlight the button
+/// Will use [IconButton] on Android and [CupertinoIconButton] on iOS.
+class PlatformIconButton extends StatelessWidget {
+  const PlatformIconButton({
+    required this.icon,
+    required this.semanticsLabel,
+    required this.onTap,
+    this.highlighted = true,
+  });
+
+  final IconData icon;
+  final String semanticsLabel;
+  final VoidCallback? onTap;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        final themeData = Theme.of(context);
+        return Theme(
+          data: themeData,
+          child: IconButton(
+            onPressed: onTap,
+            icon: Icon(icon),
+            tooltip: semanticsLabel,
+            color: highlighted ? themeData.colorScheme.primary : null,
+          ),
+        );
+      case TargetPlatform.iOS:
+        final themeData = CupertinoTheme.of(context);
+        return CupertinoTheme(
+          data: themeData.copyWith(
+            primaryColor: themeData.textTheme.textStyle.color,
+          ),
+          child: CupertinoIconButton(
+            onPressed: onTap,
+            semanticsLabel: semanticsLabel,
+            icon: Icon(
+              icon,
+              color: highlighted ? themeData.primaryColor : null,
+            ),
+          ),
+        );
+      default:
+        assert(false, 'Unexpected Platform $defaultTargetPlatform');
+        return const SizedBox.shrink();
+    }
   }
 }

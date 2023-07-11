@@ -11,6 +11,7 @@ import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/stat_card.dart';
+import 'package:lichess_mobile/src/widgets/shimmer.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/ui/puzzle/puzzle_dashboard_screen.dart';
@@ -23,6 +24,8 @@ class PuzzleDashboardWidget extends ConsumerWidget {
 
     return puzzleDashboard.when(
       data: (data) {
+        final chartData =
+            data.themes.take(9).sortedBy((e) => e.theme.name).toList();
         return ListSection(
           header: Text(context.l10n.puzzlePuzzleDashboard),
           // hack to make the divider take full length or row
@@ -47,19 +50,18 @@ class PuzzleDashboardWidget extends ConsumerWidget {
                     '${((data.global.firstWins / data.global.nb) * 100).round()}%',
               ),
             ]),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AspectRatio(
-                  aspectRatio: 1.2,
-                  child: PuzzleChart(
-                    data.themes.take(9).sortedBy((e) => e.theme.name).toList(),
+            if (chartData.length >= 3)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1.2,
+                    child: PuzzleChart(chartData),
                   ),
-                ),
-                const SizedBox(height: 30),
-              ],
-            )
+                  const SizedBox(height: 30),
+                ],
+              )
           ],
         );
       },
@@ -77,14 +79,52 @@ class PuzzleDashboardWidget extends ConsumerWidget {
                 style: Styles.sectionTitle,
               ),
               if (e is NotFoundException)
-                Text(context.l10n.puzzleNoPuzzlesToShow)
+                Center(child: Text(context.l10n.puzzleNoPuzzlesToShow))
               else
                 const Text('Could not load dashboard.'),
             ],
           ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
+      loading: () {
+        final loaderHeight = MediaQuery.of(context).size.width;
+        return Shimmer(
+          child: ShimmerLoading(
+            isLoading: true,
+            child: Padding(
+              padding: Styles.bodySectionBottomPadding,
+              child: Column(
+                children: [
+                  // ignore: avoid-wrapping-in-padding
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10.0),
+                    child: Container(
+                      width: double.infinity,
+                      height: 25,
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.all(Radius.circular(16)),
+                      ),
+                    ),
+                  ),
+                  // ignore: avoid-wrapping-in-padding
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10.0),
+                    child: Container(
+                      width: double.infinity,
+                      height: loaderHeight,
+                      decoration: const BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.all(Radius.circular(10)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

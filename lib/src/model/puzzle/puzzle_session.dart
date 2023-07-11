@@ -2,8 +2,7 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:fast_immutable_collections/fast_immutable_collections.dart'
-    hide Tuple2;
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lichess_mobile/src/model/common/id.dart';
@@ -17,7 +16,7 @@ part 'puzzle_session.g.dart';
 @riverpod
 class PuzzleSession extends _$PuzzleSession {
   static const maxAge = Duration(hours: 1);
-  static const maxSize = 50;
+  static const maxSize = 150;
 
   @override
   PuzzleSessionData build(UserId? userId, PuzzleTheme theme) {

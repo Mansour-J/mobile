@@ -83,4 +83,9 @@ class LichessColors {
 
   // good: green
   static const good = secondary;
+
+  static const warn = brag;
+
+  static const blue = Color(0xFF0072B2);
+  static const purple = Color(0xFF8572ff);
 }

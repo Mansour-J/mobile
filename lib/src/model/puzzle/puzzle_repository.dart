@@ -13,8 +13,10 @@ import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/model/auth/auth_client.dart';
 import 'package:lichess_mobile/src/utils/json.dart';
 import 'package:lichess_mobile/src/model/common/id.dart';
-import 'package:lichess_mobile/src/model/common/time_increment.dart';
+import 'package:lichess_mobile/src/model/common/chess.dart';
+import 'package:lichess_mobile/src/model/common/perf.dart';
 import 'puzzle.dart';
+import 'storm.dart';
 import 'puzzle_streak.dart';
 import 'puzzle_theme.dart';
 import 'puzzle_difficulty.dart';
@@ -84,7 +86,7 @@ class PuzzleRepository {
   FutureResult<Puzzle> fetch(PuzzleId id) {
     return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/$id')).flatMap(
           (response) => readJsonObject(
-            response.body,
+            response,
             mapper: _puzzleFromJson,
             logger: _log,
           ),
@@ -96,7 +98,7 @@ class PuzzleRepository {
         .get(Uri.parse('$kLichessHost/api/streak'))
         .flatMap((response) {
       return readJsonObject(
-        response.body,
+        response,
         mapper: (Map<String, dynamic> json) {
           return PuzzleStreakResponse(
             puzzle: _puzzleFromPick(pick(json).required()),
@@ -118,10 +120,62 @@ class PuzzleRepository {
     );
   }
 
+  FutureResult<PuzzleStormResponse> storm() {
+    return apiClient.get(Uri.parse('$kLichessHost/api/storm')).flatMap(
+      (response) {
+        return readJsonObject(
+          response,
+          mapper: (Map<String, dynamic> json) {
+            return PuzzleStormResponse(
+              puzzles: IList(
+                pick(json['puzzles']).asListOrThrow(_litePuzzleFromPick),
+              ),
+              highscore: pick(json['high']).letOrNull(_stormHighScoreFromPick),
+              key: pick(json["key"]).asStringOrNull(),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  FutureResult<StormNewHigh?> postStormRun(StormRunStats stats) {
+    final Map<String, String> body = {
+      'puzzles': stats.history.length.toString(),
+      'score': stats.score.toString(),
+      'moves': stats.moves.toString(),
+      'errors': stats.errors.toString(),
+      'combo': stats.comboBest.toString(),
+      'time': stats.time.inSeconds.toString(),
+      'highest': stats.highest.toString(),
+      'notAnExploit':
+          "Yes, we know that you can send whatever score you like. That's why there's no leaderboards and no competition.",
+    };
+
+    return apiClient
+        .post(
+      Uri.parse('$kLichessHost/storm'),
+      body: body,
+    )
+        .flatMap((response) {
+      return readJsonObject(
+        response,
+        mapper: (Map<String, dynamic> json) {
+          return pick(json['newHigh']).letOrNull(
+            (p) => StormNewHigh(
+              key: p('key').asStormNewHighTypeOrThrow(),
+              prev: p('prev').asIntOrThrow(),
+            ),
+          );
+        },
+      );
+    });
+  }
+
   FutureResult<Puzzle> daily() {
     return apiClient.get(Uri.parse('$kLichessHost/api/puzzle/daily')).flatMap(
           (response) => readJsonObject(
-            response.body,
+            response,
             mapper: _puzzleFromJson,
             logger: _log,
           ).map(
@@ -137,16 +191,35 @@ class PuzzleRepository {
         .get(Uri.parse('$kLichessHost/api/puzzle/dashboard/$days'))
         .flatMap((response) {
       return readJsonObject(
-        response.body,
+        response,
         mapper: _puzzleDashboardFromJson,
         logger: _log,
       );
     });
   }
 
+  FutureResult<IList<PuzzleHistoryEntry>> puzzleActivity(
+    int max, {
+    DateTime? before,
+  }) {
+    final beforeQuery =
+        before != null ? '&before=${before.millisecondsSinceEpoch}' : '';
+    return apiClient
+        .get(
+          Uri.parse('$kLichessHost/api/puzzle/activity?max=$max$beforeQuery'),
+        )
+        .flatMap(
+          (response) => readNdJsonList(
+            response,
+            mapper: _puzzleActivityFromJson,
+            logger: _log,
+          ),
+        );
+  }
+
   Result<PuzzleBatchResponse> _decodeBatchResponse(http.Response response) {
     return readJsonObject(
-      response.body,
+      response,
       mapper: (Map<String, dynamic> json) {
         final puzzles = json['puzzles'];
         if (puzzles is! List<dynamic>) {
@@ -193,7 +266,19 @@ class PuzzleStreakResponse with _$PuzzleStreakResponse {
   }) = _PuzzleStreakResponse;
 }
 
+@freezed
+class PuzzleStormResponse with _$PuzzleStormResponse {
+  const factory PuzzleStormResponse({
+    required IList<LitePuzzle> puzzles,
+    required String? key,
+    required PuzzleStormHighScore? highscore,
+  }) = _PuzzleStormResponse;
+}
+
 // --
+
+PuzzleHistoryEntry _puzzleActivityFromJson(Map<String, dynamic> json) =>
+    _historyPuzzleFromPick(pick(json).required());
 
 Puzzle _puzzleFromJson(Map<String, dynamic> json) =>
     _puzzleFromPick(pick(json).required());
@@ -205,6 +290,24 @@ Puzzle _puzzleFromPick(RequiredPick pick) {
   return Puzzle(
     puzzle: pick('puzzle').letOrThrow(_puzzleDatafromPick),
     game: pick('game').letOrThrow(_puzzleGameFromPick),
+  );
+}
+
+LitePuzzle _litePuzzleFromPick(RequiredPick pick) {
+  return LitePuzzle(
+    id: pick('id').asPuzzleIdOrThrow(),
+    fen: pick('fen').asStringOrThrow(),
+    solution: pick('line').asStringOrThrow().split(' ').toIList(),
+    rating: pick('rating').asIntOrThrow(),
+  );
+}
+
+PuzzleStormHighScore _stormHighScoreFromPick(RequiredPick pick) {
+  return PuzzleStormHighScore(
+    allTime: pick('allTime').asIntOrThrow(),
+    day: pick("day").asIntOrThrow(),
+    month: pick("month").asIntOrThrow(),
+    week: pick("week").asIntOrThrow(),
   );
 }
 
@@ -252,11 +355,6 @@ PuzzleGame _puzzleGameFromPick(RequiredPick pick) {
           .firstWhere((p) => p.side == Side.black),
     ),
     pgn: pick('pgn').asStringOrThrow(),
-    clock: pick('clock').letOrNull(
-      (p) =>
-          TimeIncrement.fromString(p.asStringOrThrow()) ??
-          const TimeIncrement(0, 0),
-    ),
   );
 }
 
@@ -266,6 +364,17 @@ PuzzleGamePlayer _puzzlePlayerFromPick(RequiredPick pick) {
     userId: pick('userId').asUserIdOrThrow(),
     side: pick('color').asSideOrThrow(),
     title: pick('title').asStringOrNull(),
+  );
+}
+
+PuzzleHistoryEntry _historyPuzzleFromPick(RequiredPick pick) {
+  return PuzzleHistoryEntry(
+    win: pick('win').asBoolOrThrow(),
+    date: pick('date').asDateTimeFromMillisecondsOrThrow(),
+    rating: pick('puzzle', 'rating').asIntOrThrow(),
+    id: pick('puzzle', 'id').asPuzzleIdOrThrow(),
+    fen: pick('puzzle', 'fen').asStringOrThrow(),
+    lastMove: pick('puzzle', 'lastMove').asUciMoveOrThrow(),
   );
 }
 

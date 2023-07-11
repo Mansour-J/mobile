@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:dartchess/dartchess.dart';
+import 'package:lichess_mobile/src/utils/rate_limit.dart';
 
 import 'package:lichess_mobile/src/model/common/id.dart';
 import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
+import 'package:lichess_mobile/src/utils/riverpod.dart';
 import 'featured_position.dart';
 import 'featured_player.dart';
 import 'tv_event.dart';
@@ -17,11 +19,14 @@ part 'featured_game.g.dart';
 class FeaturedGame extends _$FeaturedGame {
   StreamSubscription<TvEvent>? _streamSub;
 
+  final _debounceConnect = Debouncer(const Duration(seconds: 1));
+
   @override
   Future<FeaturedGameState> build({required bool withSound}) async {
-    final stream = connectStream();
-
     ref.onDispose(() => _streamSub?.cancel());
+    ref.debounce(const Duration(seconds: 1));
+
+    final stream = _connectStream();
 
     return stream.firstWhere((event) => event is TvFeaturedEvent).then(
       (event) {
@@ -38,10 +43,15 @@ class FeaturedGame extends _$FeaturedGame {
     );
   }
 
-  Stream<TvEvent> connectStream() {
+  void connectStream() {
+    _debounceConnect(_connectStream);
+  }
+
+  Stream<TvEvent> _connectStream() {
     final tvRepository = ref.watch(tvRepositoryProvider);
     final stream = tvRepository.tvFeed().asBroadcastStream();
 
+    _streamSub?.cancel();
     _streamSub = stream.listen((event) {
       if (event is TvFeaturedEvent) {
         _onFeaturedEvent(event);
@@ -72,7 +82,7 @@ class FeaturedGame extends _$FeaturedGame {
 
   void _onFenEvent(TvFenEvent event) {
     if (withSound) {
-      ref.read(soundServiceProvider).playMove();
+      ref.read(soundServiceProvider).play(Sound.move);
     }
     // TvFeaturedEvent is always emitted first so we can safely assume that
     // at this point the state is loaded.

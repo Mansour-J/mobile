@@ -11,7 +11,7 @@ import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/styles/lichess_colors.dart';
-import 'package:lichess_mobile/src/widgets/adaptive_dialog.dart';
+import 'package:lichess_mobile/src/widgets/yes_no_dialog.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/board_table.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
@@ -22,6 +22,7 @@ import 'package:lichess_mobile/src/model/puzzle/puzzle_service.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/utils/immersive_mode.dart';
+import 'package:lichess_mobile/src/utils/wakelock.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 import 'package:lichess_mobile/src/view/settings/toggle_sound_button.dart';
@@ -121,7 +122,8 @@ class _Body extends ConsumerStatefulWidget {
   ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
+class _BodyState extends ConsumerState<_Body>
+    with AndroidImmersiveMode, Wakelock {
   @override
   Widget build(BuildContext context) {
     final ctrlProvider = puzzleCtrlProvider(
@@ -162,7 +164,7 @@ class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
                   lastMove: puzzleState.lastMove?.cg,
                   sideToMove: puzzleState.position.turn.cg,
                   validMoves: puzzleState.validMoves,
-                  onMove: (move, {isPremove}) {
+                  onMove: (move, {isDrop, isPremove}) {
                     ref
                         .read(ctrlProvider.notifier)
                         .onUserMove(Move.fromUci(move.uci)!);
@@ -226,10 +228,10 @@ class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
       ],
     );
 
-    return puzzleState.streak!.index == 0 || puzzleState.streak!.finished
-        ? content
-        : WillPopScope(
-            onWillPop: () async {
+    return WillPopScope(
+      onWillPop: puzzleState.streak!.index == 0 || puzzleState.streak!.finished
+          ? null
+          : () async {
               final result = await showAdaptiveDialog<bool>(
                 context: context,
                 builder: (context) => YesNoDialog(
@@ -246,8 +248,8 @@ class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
               );
               return result ?? false;
             },
-            child: content,
-          );
+      child: content,
+    );
   }
 }
 

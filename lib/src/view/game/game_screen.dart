@@ -6,23 +6,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dartchess/dartchess.dart';
 import 'package:chessground/chessground.dart' as cg;
 
-import 'package:lichess_mobile/src/model/auth/auth_session.dart';
 import 'package:lichess_mobile/src/model/auth/auth_socket.dart';
 import 'package:lichess_mobile/src/model/game/game_ctrl.dart';
-import 'package:lichess_mobile/src/model/game/lobby_game.dart';
 import 'package:lichess_mobile/src/model/game/game_status.dart';
+import 'package:lichess_mobile/src/model/lobby/lobby_game.dart';
+import 'package:lichess_mobile/src/model/lobby/game_seek.dart';
 import 'package:lichess_mobile/src/model/settings/play_preferences.dart';
-import 'package:lichess_mobile/src/view/settings/toggle_sound_button.dart';
+import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
+import 'package:lichess_mobile/src/model/settings/general_preferences.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
+import 'package:lichess_mobile/src/utils/navigation.dart';
+import 'package:lichess_mobile/src/view/analysis/analysis_screen.dart';
 import 'package:lichess_mobile/src/widgets/adaptive_action_sheet.dart';
+import 'package:lichess_mobile/src/widgets/adaptive_bottom_sheet.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
-import 'package:lichess_mobile/src/widgets/glowing_text.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/widgets/board_table.dart';
 import 'package:lichess_mobile/src/widgets/countdown_clock.dart';
 import 'package:lichess_mobile/src/widgets/player.dart';
-import 'package:lichess_mobile/src/widgets/adaptive_dialog.dart';
+import 'package:lichess_mobile/src/widgets/yes_no_dialog.dart';
+import 'package:lichess_mobile/src/widgets/settings.dart';
 import 'package:lichess_mobile/src/utils/immersive_mode.dart';
+import 'package:lichess_mobile/src/utils/wakelock.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 
@@ -36,15 +41,18 @@ final RouteObserver<PageRoute<void>> gameRouteObserver =
 
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({
+    required this.seek,
     super.key,
   });
+
+  final GameSeek seek;
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends ConsumerState<GameScreen>
-    with AndroidImmersiveMode, RouteAware {
+    with AndroidImmersiveMode, RouteAware, Wakelock {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -67,7 +75,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    final gameId = ref.watch(lobbyGameProvider);
+    final gameProvider = lobbyGameProvider(widget.seek);
+    final gameId = ref.watch(gameProvider);
     final playPrefs = ref.watch(playPreferencesProvider);
 
     return gameId.when(
@@ -76,7 +85,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final gameState = ref.watch(ctrlProvider);
         return gameState.when(
           data: (state) {
-            final body = _Body(gameState: state, ctrlProvider: ctrlProvider);
+            final body = _Body(
+              gameState: state,
+              ctrlProvider: ctrlProvider,
+              gameProvider: gameProvider,
+            );
             return PlatformWidget(
               androidBuilder: (context) => _androidBuilder(
                 context: context,
@@ -116,12 +129,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       androidBuilder: (context) => _androidBuilder(
         context: context,
         playPrefs: playPrefs,
-        body: const GameLoader(),
+        body: GameLoader(widget.seek),
       ),
       iosBuilder: (context) => _iosBuilder(
         context: context,
         playPrefs: playPrefs,
-        body: const GameLoader(),
+        body: GameLoader(widget.seek),
       ),
     );
   }
@@ -155,9 +168,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 child: PingRating(size: 24.0),
               )
             : null,
-        title: _GameTitle(playPrefs: playPrefs),
+        title: _GameTitle(seek: widget.seek),
         actions: [
-          ToggleSoundButton(),
+          SettingsButton(
+            onPressed: () => showAdaptiveBottomSheet<void>(
+              context: context,
+              showDragHandle: true,
+              builder: (_) => const _Preferences(),
+            ),
+          ),
         ],
       ),
       body: body,
@@ -179,8 +198,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 child: PingRating(size: 24.0),
               )
             : null,
-        middle: _GameTitle(playPrefs: playPrefs),
-        trailing: ToggleSoundButton(),
+        middle: _GameTitle(seek: widget.seek),
+        trailing: SettingsButton(
+          onPressed: () => showAdaptiveBottomSheet<void>(
+            context: context,
+            showDragHandle: true,
+            builder: (_) => const _Preferences(),
+          ),
+        ),
       ),
       child: body,
     );
@@ -189,24 +214,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
 class _GameTitle extends ConsumerWidget {
   const _GameTitle({
-    required this.playPrefs,
+    required this.seek,
   });
 
-  final PlayPrefs playPrefs;
+  final GameSeek seek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(authSessionProvider);
-    final mode = session == null ? '' : ' • ${context.l10n.rated}';
+    final mode =
+        seek.rated ? ' • ${context.l10n.rated}' : ' • ${context.l10n.casual}';
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
-          playPrefs.speedIcon,
+          seek.perf.icon,
           color: DefaultTextStyle.of(context).style.color,
         ),
         const SizedBox(width: 4.0),
-        Text('${playPrefs.timeIncrement.display}$mode'),
+        Text('${seek.timeIncrement.display}$mode'),
       ],
     );
   }
@@ -216,10 +241,12 @@ class _Body extends ConsumerWidget {
   const _Body({
     required this.gameState,
     required this.ctrlProvider,
+    required this.gameProvider,
   });
 
   final GameCtrlState gameState;
   final GameCtrlProvider ctrlProvider;
+  final LobbyGameProvider gameProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -227,11 +254,12 @@ class _Body extends ConsumerWidget {
       if (prev?.hasValue == true && state.hasValue) {
         if (prev!.requireValue.game.playable == true &&
             state.requireValue.game.playable == false) {
-          Future.delayed(const Duration(milliseconds: 500), () {
+          Timer(const Duration(milliseconds: 500), () {
             showAdaptiveDialog<void>(
               context: context,
               builder: (context) => _GameEndDialog(
                 ctrlProvider: ctrlProvider,
+                gameProvider: gameProvider,
               ),
               barrierDismissible: true,
             );
@@ -253,7 +281,7 @@ class _Body extends ConsumerWidget {
           // Be sure to pop any dialogs that might be on top of the game screen.
           Navigator.of(context).popUntil((route) => route is! RawDialogRoute);
           ref
-              .read(lobbyGameProvider.notifier)
+              .read(gameProvider.notifier)
               .rematch(state.requireValue.redirectGameId!);
         }
       }
@@ -325,10 +353,12 @@ class _Body extends ConsumerWidget {
                 isCheck: position.isCheck,
                 sideToMove: sideToMove.cg,
                 validMoves: algebraicLegalMoves(position),
-                onMove: (move, {isPremove}) {
-                  ref
-                      .read(ctrlProvider.notifier)
-                      .onUserMove(Move.fromUci(move.uci)!);
+                onMove: (move, {isDrop, isPremove}) {
+                  ref.read(ctrlProvider.notifier).onUserMove(
+                        Move.fromUci(move.uci)!,
+                        isPremove: isPremove,
+                        isDrop: isDrop,
+                      );
                 },
               ),
               topTable: topPlayer,
@@ -349,16 +379,77 @@ class _Body extends ConsumerWidget {
             ),
           ),
         ),
-        _GameBottomBar(gameState: gameState, ctrlProvider: ctrlProvider),
+        _GameBottomBar(
+          gameState: gameState,
+          ctrlProvider: ctrlProvider,
+          gameProvider: gameProvider,
+        ),
       ],
     );
 
-    return gameState.game.playable
-        ? WillPopScope(
-            onWillPop: () async => false,
-            child: content,
-          )
-        : content;
+    return WillPopScope(
+      onWillPop: gameState.game.playable ? () async => false : null,
+      child: content,
+    );
+  }
+}
+
+class _Preferences extends ConsumerWidget {
+  const _Preferences();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSoundEnabled = ref.watch(
+      generalPreferencesProvider.select(
+        (prefs) => prefs.isSoundEnabled,
+      ),
+    );
+    final boardPrefs = ref.watch(boardPreferencesProvider);
+
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          Padding(
+            padding: Styles.bodyPadding,
+            child: Text(
+              context.l10n.preferencesPreferences,
+              style: Styles.title,
+            ),
+          ),
+          SwitchSettingTile(
+            title: Text(context.l10n.sound),
+            value: isSoundEnabled,
+            onChanged: (value) {
+              ref
+                  .read(generalPreferencesProvider.notifier)
+                  .toggleSoundEnabled();
+            },
+          ),
+          SwitchSettingTile(
+            title: const Text('Haptic feedback'),
+            value: boardPrefs.hapticFeedback,
+            onChanged: (value) {
+              ref
+                  .read(boardPreferencesProvider.notifier)
+                  .toggleHapticFeedback();
+            },
+          ),
+          SwitchSettingTile(
+            title: Text(
+              context.l10n.preferencesPieceAnimation,
+              maxLines: 2,
+            ),
+            value: boardPrefs.pieceAnimation,
+            onChanged: (value) {
+              ref
+                  .read(boardPreferencesProvider.notifier)
+                  .togglePieceAnimation();
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -366,10 +457,12 @@ class _GameBottomBar extends ConsumerWidget {
   const _GameBottomBar({
     required this.gameState,
     required this.ctrlProvider,
+    required this.gameProvider,
   });
 
   final GameCtrlState gameState;
   final GameCtrlProvider ctrlProvider;
+  final LobbyGameProvider gameProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -391,6 +484,24 @@ class _GameBottomBar extends ConsumerWidget {
               },
               icon: Icons.menu,
             ),
+            if (gameState.game.finished)
+              BottomBarButton(
+                label: context.l10n.gameAnalysis,
+                highlighted: true,
+                shortLabel: 'Analysis',
+                icon: CupertinoIcons.gauge,
+                onTap: () => pushPlatformRoute(
+                  context,
+                  fullscreenDialog: true,
+                  builder: (_) => AnalysisScreen(
+                    variant: gameState.game.meta.variant,
+                    steps: gameState.game.steps,
+                    orientation: gameState.game.youAre ?? Side.white,
+                    id: gameState.game.meta.id,
+                    title: context.l10n.gameAnalysis,
+                  ),
+                ),
+              ),
             if (gameState.game.playable &&
                 gameState.game.opponent?.offeringDraw == true)
               BottomBarButton(
@@ -471,17 +582,18 @@ class _GameBottomBar extends ConsumerWidget {
                 label: 'Previous',
                 shortLabel: 'Previous',
                 icon: CupertinoIcons.chevron_back,
+                showAndroidTooltip: false,
               ),
             ),
             RepeatButton(
-              onLongPress: gameState.canGoForward
-                  ? () => _moveForward(ref, hapticFeedback: false)
-                  : null,
+              onLongPress:
+                  gameState.canGoForward ? () => _moveForward(ref) : null,
               child: BottomBarButton(
                 onTap: gameState.canGoForward ? () => _moveForward(ref) : null,
                 label: context.l10n.next,
                 shortLabel: context.l10n.next,
                 icon: CupertinoIcons.chevron_forward,
+                showAndroidTooltip: false,
               ),
             ),
           ],
@@ -490,10 +602,8 @@ class _GameBottomBar extends ConsumerWidget {
     );
   }
 
-  void _moveForward(WidgetRef ref, {bool hapticFeedback = true}) {
-    ref
-        .read(ctrlProvider.notifier)
-        .cursorForward(hapticFeedback: hapticFeedback);
+  void _moveForward(WidgetRef ref) {
+    ref.read(ctrlProvider.notifier).cursorForward();
   }
 
   void _moveBackward(WidgetRef ref) {
@@ -620,7 +730,7 @@ class _GameBottomBar extends ConsumerWidget {
           BottomSheetAction(
             label: Text(context.l10n.newOpponent),
             onPressed: (_) {
-              ref.read(lobbyGameProvider.notifier).newOpponent();
+              ref.read(gameProvider.notifier).newOpponent();
             },
           ),
       ],
@@ -631,9 +741,11 @@ class _GameBottomBar extends ConsumerWidget {
 class _GameEndDialog extends ConsumerStatefulWidget {
   const _GameEndDialog({
     required this.ctrlProvider,
+    required this.gameProvider,
   });
 
   final GameCtrlProvider ctrlProvider;
+  final LobbyGameProvider gameProvider;
 
   @override
   ConsumerState<_GameEndDialog> createState() => _GameEndDialogState();
@@ -714,19 +826,15 @@ class _GameEndDialogState extends ConsumerState<_GameEndDialog> {
                             .proposeOrAcceptRematch();
                       }
                     : null,
-            child: gameState.game.opponent?.offeringRematch == true
-                ? GlowingText(
-                    context.l10n.rematch,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  )
-                : Text(context.l10n.rematch),
+            glowing: gameState.game.opponent?.offeringRematch == true,
+            child: Text(context.l10n.rematch),
           ),
         const SizedBox(height: 8.0),
         SecondaryButton(
           semanticsLabel: context.l10n.newOpponent,
           onPressed: _activateButtons
               ? () {
-                  ref.read(lobbyGameProvider.notifier).newOpponent();
+                  ref.read(widget.gameProvider.notifier).newOpponent();
                   // Other alert dialogs may be shown before this one, so be sure to pop them all
                   Navigator.of(context)
                       .popUntil((route) => route is! RawDialogRoute);

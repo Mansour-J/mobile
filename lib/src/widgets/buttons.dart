@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:lichess_mobile/src/widgets/platform.dart';
+import 'package:lichess_mobile/src/utils/l10n_context.dart';
 
 /// Platform agnostic button which is used for important actions.
 ///
@@ -33,9 +35,6 @@ class FatButton extends StatelessWidget {
           ? CupertinoButton.filled(onPressed: onPressed, child: child)
           : FilledButton(
               onPressed: onPressed,
-              style: ElevatedButton.styleFrom(
-                textStyle: const TextStyle(fontSize: 18),
-              ),
               child: child,
             ),
     );
@@ -43,12 +42,13 @@ class FatButton extends StatelessWidget {
 }
 
 /// Platform agnostic button meant for medium importance actions.
-class SecondaryButton extends StatelessWidget {
+class SecondaryButton extends StatefulWidget {
   const SecondaryButton({
     required this.semanticsLabel,
     required this.child,
     required this.onPressed,
     this.textStyle,
+    this.glowing = false,
     super.key,
   });
 
@@ -56,6 +56,54 @@ class SecondaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget child;
   final TextStyle? textStyle;
+  final bool glowing;
+
+  @override
+  State<SecondaryButton> createState() => _SecondaryButtonState();
+}
+
+class _SecondaryButtonState extends State<SecondaryButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    );
+    _animation = (defaultTargetPlatform == TargetPlatform.iOS
+            ? Tween<double>(begin: 0.5, end: 1.0)
+            : Tween<double>(begin: 0.0, end: 0.3))
+        .animate(_controller)
+      ..addListener(() {
+        setState(() {});
+      });
+
+    if (widget.glowing) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(SecondaryButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.glowing != oldWidget.glowing) {
+      if (widget.glowing) {
+        _controller.repeat(reverse: true);
+      } else {
+        _controller.stop();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,19 +111,30 @@ class SecondaryButton extends StatelessWidget {
       container: true,
       enabled: true,
       button: true,
-      label: semanticsLabel,
+      label: widget.semanticsLabel,
       excludeSemantics: true,
       child: defaultTargetPlatform == TargetPlatform.iOS
           ? CupertinoButton(
-              onPressed: onPressed,
-              child: child,
+              color: widget.glowing
+                  ? CupertinoTheme.of(context)
+                      .primaryColor
+                      .withOpacity(_animation.value)
+                  : null,
+              onPressed: widget.onPressed,
+              child: widget.child,
             )
           : OutlinedButton(
-              onPressed: onPressed,
+              onPressed: widget.onPressed,
               style: OutlinedButton.styleFrom(
-                textStyle: textStyle,
+                textStyle: widget.textStyle,
+                backgroundColor: widget.glowing
+                    ? Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withOpacity(_animation.value)
+                    : null,
               ),
-              child: child,
+              child: widget.child,
             ),
     );
   }
@@ -96,6 +155,56 @@ class AppBarTextButton extends StatelessWidget {
     return defaultTargetPlatform == TargetPlatform.iOS
         ? CupertinoButton(
             padding: EdgeInsets.zero,
+            onPressed: onPressed,
+            child: child,
+          )
+        : TextButton(
+            onPressed: onPressed,
+            child: child,
+          );
+  }
+}
+
+/// A cogs icon button in the app bar
+class SettingsButton extends StatelessWidget {
+  const SettingsButton({
+    required this.onPressed,
+    super.key,
+  });
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? CupertinoIconButton(
+            padding: EdgeInsets.zero,
+            semanticsLabel: context.l10n.settingsSettings,
+            onPressed: onPressed,
+            icon: const Icon(Icons.settings),
+          )
+        : IconButton(
+            tooltip: context.l10n.settingsSettings,
+            icon: const Icon(Icons.settings),
+            onPressed: onPressed,
+          );
+  }
+}
+
+class AdaptiveTextButton extends StatelessWidget {
+  const AdaptiveTextButton({
+    required this.child,
+    required this.onPressed,
+    super.key,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? CupertinoButton(
             onPressed: onPressed,
             child: child,
           )
@@ -238,6 +347,7 @@ class BottomBarButton extends StatelessWidget {
     this.showAndroidTooltip = true,
     this.highlighted = false,
     this.showAndroidShortLabel = false,
+    super.key,
   });
 
   final IconData icon;
@@ -482,7 +592,7 @@ class RepeatButton extends StatefulWidget {
       Duration(milliseconds: 300),
       Duration(milliseconds: 150),
     ],
-    this.holdDelay = const Duration(milliseconds: 50),
+    this.holdDelay = const Duration(milliseconds: 30),
   });
 
   final Widget child;
@@ -511,8 +621,10 @@ class _RepeatButtonState extends State<RepeatButton> {
     super.dispose();
   }
 
-  Future<void> _onPress() async {
+  Future<void> _onLongPress() async {
     _isPressed = true;
+
+    HapticFeedback.selectionClick();
 
     widget.onLongPress?.call();
     for (final time in widget.triggerDelays) {
@@ -537,7 +649,7 @@ class _RepeatButtonState extends State<RepeatButton> {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onLongPress: _onPress,
+      onLongPress: _onLongPress,
       onLongPressCancel: _onPressEnd,
       onLongPressUp: _onPressEnd,
       child: widget.child,

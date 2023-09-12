@@ -25,6 +25,7 @@ import 'package:lichess_mobile/src/model/engine/engine_evaluation.dart';
 import 'package:lichess_mobile/src/utils/immersive_mode.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
+import 'package:lichess_mobile/src/utils/wakelock.dart';
 import 'package:lichess_mobile/src/view/engine/engine_gauge.dart';
 import 'package:lichess_mobile/src/view/settings/toggle_sound_button.dart';
 
@@ -140,7 +141,8 @@ class _Body extends ConsumerStatefulWidget {
   ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
+class _BodyState extends ConsumerState<_Body>
+    with AndroidImmersiveMode, Wakelock {
   @override
   Widget build(BuildContext context) {
     final ctrlProvider = puzzleCtrlProvider(widget.initialPuzzleContext);
@@ -183,31 +185,25 @@ class _BodyState extends ConsumerState<_Body> with AndroidImmersiveMode {
                           ),
                         ])
                       : null,
-                  onMove: (move, {isPremove}) {
+                  onMove: (move, {isDrop, isPremove}) {
                     ref
                         .read(ctrlProvider.notifier)
                         .onUserMove(Move.fromUci(move.uci)!);
                   },
                 ),
-                topTable: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: PuzzleFeedbackWidget(
-                          puzzle: puzzleState.puzzle,
-                          state: puzzleState,
-                          onStreak: false,
-                        ),
-                      ),
-                    ),
-                    if (puzzleState.isEngineEnabled)
-                      EngineGauge(
+                engineGauge: puzzleState.isEngineEnabled
+                    ? EngineGaugeParams(
                         evaluationContext: puzzleState.evaluationContext,
                         position: puzzleState.position,
                         savedEval: puzzleState.node.eval,
-                      ),
-                  ],
+                      )
+                    : null,
+                topTable: Center(
+                  child: PuzzleFeedbackWidget(
+                    puzzle: puzzleState.puzzle,
+                    state: puzzleState,
+                    onStreak: false,
+                  ),
                 ),
                 bottomTable: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -326,9 +322,9 @@ class _BottomBar extends ConsumerWidget {
                 label: context.l10n.viewTheSolution,
                 shortLabel: context.l10n.solution,
                 showAndroidShortLabel: true,
-                onTap: puzzleState.mode == PuzzleMode.view
-                    ? null
-                    : () => ref.read(ctrlProvider.notifier).viewSolution(),
+                onTap: puzzleState.canViewSolution
+                    ? () => ref.read(ctrlProvider.notifier).viewSolution()
+                    : null,
               ),
             if (puzzleState.mode == PuzzleMode.view)
               RepeatButton(
@@ -347,9 +343,8 @@ class _BottomBar extends ConsumerWidget {
             if (puzzleState.mode == PuzzleMode.view)
               RepeatButton(
                 triggerDelays: _repeatTriggerDelays,
-                onLongPress: puzzleState.canGoNext
-                    ? () => _moveForward(ref, hapticFeedback: false)
-                    : null,
+                onLongPress:
+                    puzzleState.canGoNext ? () => _moveForward(ref) : null,
                 child: BottomBarButton(
                   onTap: puzzleState.canGoNext ? () => _moveForward(ref) : null,
                   label: context.l10n.next,
@@ -377,8 +372,8 @@ class _BottomBar extends ConsumerWidget {
     );
   }
 
-  void _moveForward(WidgetRef ref, {bool hapticFeedback = true}) {
-    ref.read(ctrlProvider.notifier).userNext(hapticFeedback: hapticFeedback);
+  void _moveForward(WidgetRef ref) {
+    ref.read(ctrlProvider.notifier).userNext();
   }
 
   void _moveBackward(WidgetRef ref) {

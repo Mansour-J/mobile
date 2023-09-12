@@ -1,11 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:dartchess/dartchess.dart';
 import 'package:flutter_gen/gen_l10n/l10n.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:lichess_mobile/src/model/game/game.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:lichess_mobile/src/styles/lichess_colors.dart';
@@ -13,8 +11,6 @@ import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/model/common/perf.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/constants.dart';
-import 'package:lichess_mobile/src/model/game/game_repository_providers.dart';
-import 'package:lichess_mobile/src/model/game/game_status.dart';
 import 'package:lichess_mobile/src/model/user/user_repository_providers.dart';
 import 'package:lichess_mobile/src/model/user/user.dart';
 import 'package:lichess_mobile/src/view/user/perf_stats_screen.dart';
@@ -23,13 +19,12 @@ import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/feedback.dart';
-import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/widgets/player.dart';
-import 'package:lichess_mobile/src/widgets/shimmer.dart';
-import 'package:lichess_mobile/src/view/game/archived_game_screen.dart';
+import 'package:lichess_mobile/src/view/user/recent_games.dart';
 
 import 'user_activity.dart';
+import 'countries.dart';
 
 class UserScreen extends ConsumerWidget {
   const UserScreen({required this.user, super.key});
@@ -49,7 +44,11 @@ class UserScreen extends ConsumerWidget {
     final asyncUser = ref.watch(userProvider(id: user.id));
     return Scaffold(
       appBar: AppBar(
-        title: PlayerTitle(userName: user.name, title: user.title),
+        title: PlayerTitle(
+          userName: user.name,
+          title: user.title,
+          isPatron: user.isPatron,
+        ),
       ),
       body: asyncUser.when(
         data: (user) {
@@ -69,7 +68,11 @@ class UserScreen extends ConsumerWidget {
     final asyncUser = ref.watch(userProvider(id: user.id));
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: PlayerTitle(userName: user.name, title: user.title),
+        middle: PlayerTitle(
+          userName: user.name,
+          title: user.title,
+          isPatron: user.isPatron,
+        ),
       ),
       child: asyncUser.when(
         data: (user) => SafeArea(
@@ -115,26 +118,28 @@ class _Profile extends StatelessWidget {
             style: _userNameStyle,
           )
         : null;
-    final title = userFullName;
 
     return Padding(
       padding: Styles.bodySectionPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (user.isPatron == true || title != null)
-            ListTile(
-              leading: user.isPatron == true
-                  ? const Icon(LichessIcons.patron, size: 40)
-                  : null,
-              title: title,
-              contentPadding: const EdgeInsets.only(bottom: 10),
+          if (userFullName != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: userFullName,
             ),
+          if (user.profile?.bio != null)
+            Text(
+              user.profile!.bio!,
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
+          const SizedBox(height: 10),
           if (user.profile != null)
-            Location(profile: user.profile!)
-          else
-            kEmptyWidget,
-          const SizedBox(height: 5),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Location(profile: user.profile!),
+            ),
           Text(
             '${context.l10n.memberSince} ${DateFormat.yMMMMd().format(user.createdAt)}',
           ),
@@ -265,101 +270,6 @@ class PerfCards extends StatelessWidget {
       builder: (context) => PerfStatsScreen(
         user: user,
         perf: perf,
-        loggedInUser: user,
-      ),
-    );
-  }
-}
-
-class RecentGames extends ConsumerWidget {
-  const RecentGames({required this.user, super.key});
-
-  final User user;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final recentGames = ref.watch(userRecentGamesProvider(userId: user.id));
-
-    Widget getResultIcon(ArchivedGameData game, Side mySide) {
-      if (game.status == GameStatus.aborted ||
-          game.status == GameStatus.noStart) {
-        return const Icon(
-          CupertinoIcons.xmark_square_fill,
-          color: LichessColors.grey,
-        );
-      } else {
-        return game.winner == null
-            ? const Icon(
-                CupertinoIcons.equal_square_fill,
-                color: LichessColors.brag,
-              )
-            : game.winner == mySide
-                ? const Icon(
-                    CupertinoIcons.plus_square_fill,
-                    color: LichessColors.good,
-                  )
-                : const Icon(
-                    CupertinoIcons.minus_square_fill,
-                    color: LichessColors.red,
-                  );
-      }
-    }
-
-    return recentGames.when(
-      data: (data) {
-        if (data.isEmpty) {
-          return kEmptyWidget;
-        }
-        return ListSection(
-          header: Text(context.l10n.recentGames, style: Styles.sectionTitle),
-          hasLeading: true,
-          children: data.map((game) {
-            final mySide = game.white.id == user.id ? Side.white : Side.black;
-            final opponent = game.white.id == user.id ? game.black : game.white;
-
-            return GameListTile(
-              onTap: game.variant.isSupported
-                  ? () {
-                      pushPlatformRoute(
-                        context,
-                        rootNavigator: true,
-                        builder: (context) => ArchivedGameScreen(
-                          gameData: game,
-                          orientation: user.id == game.white.id
-                              ? Side.white
-                              : Side.black,
-                        ),
-                      );
-                    }
-                  : null,
-              icon: game.perf.icon,
-              playerTitle: PlayerTitle(
-                userName: opponent.displayName(context),
-                title: opponent.title,
-                rating: opponent.rating,
-              ),
-              subtitle: Text(
-                timeago.format(game.lastMoveAt),
-              ),
-              trailing: getResultIcon(game, mySide),
-            );
-          }).toList(),
-        );
-      },
-      error: (error, stackTrace) {
-        debugPrint(
-          'SEVERE: [UserScreen] could not load user games; $error\n$stackTrace',
-        );
-        return const Text('Could not load games.');
-      },
-      loading: () => Shimmer(
-        child: ShimmerLoading(
-          isLoading: true,
-          child: ListSection.loading(
-            itemsNumber: 10,
-            header: true,
-          ),
-        ),
       ),
     );
   }
@@ -382,7 +292,7 @@ class Location extends StatelessWidget {
         else
           kEmptyWidget,
         const SizedBox(width: 10),
-        Text(profile.location ?? ''),
+        Text(profile.location ?? countries[profile.country] ?? ''),
       ],
     );
   }

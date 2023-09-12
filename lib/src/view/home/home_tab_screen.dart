@@ -5,17 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dartchess/dartchess.dart';
 
 import 'package:lichess_mobile/src/constants.dart';
+import 'package:lichess_mobile/src/navigation.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
+import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/utils/connectivity.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
 import 'package:lichess_mobile/src/widgets/board_preview.dart';
-import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
-import 'package:lichess_mobile/src/widgets/bottom_navigation.dart';
 import 'package:lichess_mobile/src/model/auth/auth_session.dart';
+import 'package:lichess_mobile/src/model/lobby/game_seek.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_service.dart';
@@ -33,14 +34,14 @@ final RouteObserver<PageRoute<void>> homeRouteObserver =
 
 final isHomeRootProvider = StateProvider<bool>((ref) => true);
 
-class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+class HomeTabScreen extends ConsumerStatefulWidget {
+  const HomeTabScreen({super.key});
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeTabScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
+class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
   final _androidRefreshKey = GlobalKey<RefreshIndicatorState>();
 
   bool wasOnline = true;
@@ -98,7 +99,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   Widget _androidBuilder(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Home'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              String.fromCharCode(LichessIcons.lichess.codePoint),
+              style: TextStyle(
+                fontFamily: LichessIcons.lichess.fontFamily,
+                fontSize: 26.0,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 8.0),
+            const Text('lichess.org'),
+          ],
+        ),
         actions: const [
           SignInWidget(),
         ],
@@ -119,9 +134,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
         child: CustomScrollView(
           controller: homeScrollController,
           slivers: [
-            const CupertinoSliverNavigationBar(
-              largeTitle: Text('Home'),
-              trailing: SignInWidget(),
+            CupertinoSliverNavigationBar(
+              largeTitle: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    String.fromCharCode(LichessIcons.lichess.codePoint),
+                    style: TextStyle(
+                      fontFamily: LichessIcons.lichess.fontFamily,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8.0),
+                  const Text('lichess.org'),
+                ],
+              ),
+              trailing: const SignInWidget(),
             ),
             CupertinoSliverRefreshControl(
               onRefresh: _refreshData,
@@ -181,12 +209,17 @@ class _HomeScaffold extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 15.0)
                   .add(Styles.horizontalBodyPadding),
-              child: FatButton(
-                semanticsLabel: context.l10n.play,
-                child: Text(context.l10n.play),
+              child: CupertinoButton.filled(
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  child: Text(context.l10n.play),
+                ),
                 onPressed: () {
                   pushPlatformRoute(
                     context,
+                    title: context.l10n.play,
                     builder: (_) => const PlayScreen(),
                   );
                 },
@@ -221,6 +254,12 @@ class _HomeScaffold extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 15.0)
                     .add(Styles.horizontalBodyPadding),
                 child: FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    textStyle: const TextStyle(
+                      fontSize: 18.0,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   child: Text(context.l10n.play),
                   onPressed: () {
                     pushPlatformRoute(
@@ -339,8 +378,15 @@ class _CreateAGame extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final timeControlPref = ref
-        .watch(playPreferencesProvider.select((prefs) => prefs.timeIncrement));
+    final playPrefs = ref.watch(playPreferencesProvider);
+    final session = ref.watch(authSessionProvider);
+    final seek = playPrefs.seekMode == SeekMode.fast
+        ? GameSeek.fastPairingFromPrefs(playPrefs, session)
+        : GameSeek.customFromPrefs(playPrefs, session);
+
+    final mode =
+        seek.rated ? ' • ${context.l10n.rated}' : ' • ${context.l10n.casual}';
+
     return SmallBoardPreview(
       orientation: Side.white.cg,
       fen: kInitialFEN,
@@ -355,12 +401,15 @@ class _CreateAGame extends ConsumerWidget {
           Row(
             children: [
               Icon(
-                timeControlPref.speed.icon,
+                seek.perf.icon,
                 size: 20,
                 color: DefaultTextStyle.of(context).style.color,
               ),
               const SizedBox(width: 5),
-              Text(timeControlPref.display, style: Styles.timeControl),
+              Text(
+                '${seek.timeIncrement.display}$mode',
+                style: Styles.timeControl,
+              ),
             ],
           ),
         ],
@@ -370,7 +419,9 @@ class _CreateAGame extends ConsumerWidget {
           context,
           rootNavigator: true,
           builder: (BuildContext context) {
-            return const GameScreen();
+            return GameScreen(
+              seek: seek,
+            );
           },
         );
       },

@@ -1,31 +1,42 @@
+import 'package:dartchess/dartchess.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 
 import 'package:lichess_mobile/src/model/common/chess.dart';
 import 'package:lichess_mobile/src/model/common/uci.dart';
 import 'package:lichess_mobile/src/model/common/eval.dart';
-import 'package:lichess_mobile/src/model/common/tree.dart';
+import 'package:lichess_mobile/src/model/common/node.dart';
 
 part 'work.freezed.dart';
 
 typedef EvalResult = (Work, ClientEval);
 
+/// A work item for the engine.
 @freezed
 class Work with _$Work {
+  const Work._();
+
   const factory Work({
     required Variant variant,
     required int threads,
     int? hashSize,
-    bool? stopRequested,
     required UciPath path,
     required int maxDepth,
     required int multiPv,
-    required int ply,
     bool? threatMode,
     required String initialFen,
-    required String currentFen,
     required IList<Step> steps,
+    required Position currentPosition,
   }) = _Work;
+
+  /// The work position FEN.
+  String get fen => steps.lastOrNull?.fen ?? initialFen;
+
+  /// The work ply.
+  int get ply => steps.lastOrNull?.ply ?? 0;
+
+  /// Cached eval for the work position.
+  ClientEval? get evalCache => steps.lastOrNull?.eval;
 }
 
 @freezed
@@ -39,7 +50,7 @@ class Step with _$Step {
     ClientEval? eval,
   }) = _Step;
 
-  factory Step.fromNode(ViewNode node) {
+  factory Step.fromNode(ViewBranch node) {
     return Step(
       ply: node.ply,
       fen: node.fen,

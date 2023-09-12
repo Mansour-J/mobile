@@ -8,40 +8,12 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 import 'package:lichess_mobile/src/app_dependencies.dart';
 import 'package:lichess_mobile/src/constants.dart';
+import 'package:lichess_mobile/src/navigation.dart';
 import 'package:lichess_mobile/src/model/settings/brightness.dart';
 import 'package:lichess_mobile/src/model/settings/general_preferences.dart';
 import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
-import 'package:lichess_mobile/src/widgets/bottom_navigation.dart';
 import 'package:lichess_mobile/src/utils/immersive_mode.dart';
-
-class LoadApp extends ConsumerWidget {
-  const LoadApp({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<AsyncValue<AppDependencies>>(
-      appDependenciesProvider,
-      (_, state) {
-        if (state.hasValue) {
-          FlutterNativeSplash.remove();
-        }
-      },
-    );
-
-    final appDependencies = ref.watch(appDependenciesProvider);
-    return appDependencies.when(
-      data: (_) => const App(),
-      // loading screen is handled by the native splash screen
-      loading: () => const SizedBox.shrink(),
-      error: (err, st) {
-        debugPrint(
-          'SEVERE: [App] could not load app dependencies; $err\n$st',
-        );
-        return const SizedBox.shrink();
-      },
-    );
-  }
-}
+import 'package:lichess_mobile/src/utils/wakelock.dart';
 
 class App extends ConsumerStatefulWidget {
   const App({super.key});
@@ -51,6 +23,14 @@ class App extends ConsumerStatefulWidget {
 }
 
 class _AppState extends ConsumerState<App> {
+  @override
+  void initState() {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      setOptimalDisplayMode();
+    }
+    super.initState();
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(
@@ -64,7 +44,7 @@ class _AppState extends ConsumerState<App> {
         (state) => state.boardTheme,
       ),
     );
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.sizeOf(context).height;
 
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -106,16 +86,9 @@ class _AppState extends ConsumerState<App> {
       home: const BottomNavScaffold(),
       navigatorObservers: [
         immersiveModeRouteObserver,
+        wakelockRouteObserver,
       ],
     );
-  }
-
-  @override
-  void initState() {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      setOptimalDisplayMode();
-    }
-    super.initState();
   }
 
   // Code taken from https://stackoverflow.com/questions/63631522/flutter-120fps-issue
@@ -140,5 +113,34 @@ class _AppState extends ConsumerState<App> {
 
     // This setting is per session.
     await FlutterDisplayMode.setPreferredMode(mostOptimalMode);
+  }
+}
+
+class LoadApp extends ConsumerWidget {
+  const LoadApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<AppDependencies>>(
+      appDependenciesProvider,
+      (_, state) {
+        if (state.hasValue) {
+          FlutterNativeSplash.remove();
+        }
+      },
+    );
+
+    final appDependencies = ref.watch(appDependenciesProvider);
+    return appDependencies.when(
+      data: (_) => const App(),
+      // loading screen is handled by the native splash screen
+      loading: () => const SizedBox.shrink(),
+      error: (err, st) {
+        debugPrint(
+          'SEVERE: [App] could not load app dependencies; $err\n$st',
+        );
+        return const SizedBox.shrink();
+      },
+    );
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/services.dart';
 import 'package:async/async.dart';
 import 'package:result_extensions/result_extensions.dart';
 import 'package:collection/collection.dart';
@@ -11,7 +10,7 @@ import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:lichess_mobile/src/model/common/service/move_feedback.dart';
 import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
 import 'package:lichess_mobile/src/model/common/chess.dart';
-import 'package:lichess_mobile/src/model/common/tree.dart';
+import 'package:lichess_mobile/src/model/common/node.dart';
 import 'package:lichess_mobile/src/model/common/uci.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_streak.dart';
@@ -21,6 +20,7 @@ import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_preferences.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_session.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_difficulty.dart';
+import 'package:lichess_mobile/src/model/settings/analysis_preferences.dart';
 import 'package:lichess_mobile/src/model/engine/engine_evaluation.dart';
 import 'package:lichess_mobile/src/model/engine/work.dart';
 import 'package:lichess_mobile/src/utils/rate_limit.dart';
@@ -31,8 +31,9 @@ part 'puzzle_ctrl.freezed.dart';
 @riverpod
 class PuzzleCtrl extends _$PuzzleCtrl {
   // ignore: avoid-late-keyword
-  late Node _gameTree;
+  late Branch _gameTree;
   Timer? _firstMoveTimer;
+  Timer? _enableSolutionButtonTimer;
   Timer? _viewSolutionTimer;
   // on streak, we pre-load the next puzzle to avoid a delay when the user
   // completes the current one
@@ -48,6 +49,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     ref.onDispose(() {
       _firstMoveTimer?.cancel();
       _viewSolutionTimer?.cancel();
+      _enableSolutionButtonTimer?.cancel();
       _engineEvalDebounce.dispose();
     });
 
@@ -59,11 +61,18 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     PuzzleStreak? streak,
   ) {
     final root = Root.fromPgn(context.puzzle.game.pgn);
-    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Node;
+    _gameTree = root.nodeAt(root.mainlinePath.penultimate) as Branch;
 
     // play first move after 1 second
     _firstMoveTimer = Timer(const Duration(seconds: 1), () {
       _setPath(state.initialPath);
+    });
+
+    // enable solution button after 4 seconds
+    _enableSolutionButtonTimer = Timer(const Duration(seconds: 4), () {
+      state = state.copyWith(
+        canViewSolution: true,
+      );
     });
 
     final initialPath = UciPath.fromId(_gameTree.children.first.id);
@@ -80,8 +89,9 @@ class PuzzleCtrl extends _$PuzzleCtrl {
       initialFen: _gameTree.fen,
       initialPath: initialPath,
       currentPath: UciPath.empty,
-      nodeList: IList([ViewNode.fromNode(_gameTree)]),
+      node: _gameTree.view,
       pov: _gameTree.nodeAt(initialPath).ply.isEven ? Side.white : Side.black,
+      canViewSolution: false,
       resultSent: false,
       isChangingDifficulty: false,
       isLocalEvalEnabled: false,
@@ -95,8 +105,9 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     _addMove(move);
 
     if (state.mode == PuzzleMode.play) {
+      final nodeList = _gameTree.nodesOn(state.currentPath).toList();
       final movesToTest =
-          state.nodeList.sublist(state.initialPath.size).map((e) => e.sanMove);
+          nodeList.sublist(state.initialPath.size).map((e) => e.sanMove);
 
       final isGoodMove = state.puzzle.testSolution(movesToTest);
 
@@ -134,10 +145,9 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     }
   }
 
-  void userNext({bool hapticFeedback = true}) {
+  void userNext() {
     _viewSolutionTimer?.cancel();
     _goToNextNode(replaying: true);
-    if (hapticFeedback) HapticFeedback.lightImpact();
   }
 
   void userPrevious() {
@@ -151,7 +161,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     _mergeSolution();
 
     state = state.copyWith(
-      nodeList: IList(_gameTree.nodesOn(state.currentPath)),
+      node: _gameTree.branchAt(state.currentPath).view,
     );
 
     _onFailOrWin(PuzzleResult.lose);
@@ -336,7 +346,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
         _mergeSolution();
         state = state.copyWith(
           mode: PuzzleMode.view,
-          nodeList: IList(_gameTree.nodesOn(state.currentPath)),
+          node: _gameTree.branchAt(state.currentPath).view,
           streak: state.streak!.copyWith(
             finished: true,
           ),
@@ -376,13 +386,13 @@ class PuzzleCtrl extends _$PuzzleCtrl {
 
   void _setPath(UciPath path, {bool replaying = false}) {
     final pathChange = state.currentPath != path;
-    final newNodeList = IList(_gameTree.nodesOn(path));
-    final sanMove = newNodeList.last.sanMove;
+    final newNode = _gameTree.branchAt(path).view;
+    final sanMove = newNode.sanMove;
     if (!replaying) {
       final isForward = path.size > state.currentPath.size;
       if (isForward) {
-        final isCheck = sanMove.san.contains('+');
-        if (sanMove.san.contains('x')) {
+        final isCheck = sanMove.isCheck;
+        if (sanMove.isCapture) {
           ref.read(moveFeedbackServiceProvider).captureFeedback(check: isCheck);
         } else {
           ref.read(moveFeedbackServiceProvider).moveFeedback(check: isCheck);
@@ -391,7 +401,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     } else {
       // when replaying moves fast we don't want haptic feedback
       final soundService = ref.read(soundServiceProvider);
-      if (sanMove.san.contains('x')) {
+      if (sanMove.isCapture) {
         soundService.play(Sound.capture);
       } else {
         soundService.play(Sound.move);
@@ -399,7 +409,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     }
     state = state.copyWith(
       currentPath: path,
-      nodeList: newNodeList,
+      node: newNode,
       lastMove: sanMove.move,
     );
 
@@ -432,7 +442,8 @@ class PuzzleCtrl extends _$PuzzleCtrl {
           )
           .start(
             state.currentPath,
-            state.nodeList.map(Step.fromNode),
+            _gameTree.nodesOn(state.currentPath).map(Step.fromNode),
+            state.node.position,
             shouldEmit: (work) => work.path == state.currentPath,
           )
           ?.forEach((t) {
@@ -459,7 +470,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     final initialNode = _gameTree.nodeAt(state.initialPath);
     final fromPly = initialNode.ply;
     final (_, newNodes) = state.puzzle.puzzle.solution.foldIndexed(
-      (initialNode.position, IList<Node>(const [])),
+      (initialNode.position, IList<Branch>(const [])),
       (index, previous, uci) {
         final move = Move.fromUci(uci);
         final (pos, nodes) = previous;
@@ -467,8 +478,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
         return (
           newPos,
           nodes.add(
-            Node(
-              id: UciCharPair.fromMove(move),
+            Branch(
               ply: fromPly + index + 1,
               fen: newPos.fen,
               position: newPos,
@@ -500,10 +510,11 @@ class PuzzleCtrlState with _$PuzzleCtrlState {
     required UciPath initialPath,
     required UciPath currentPath,
     required Side pov,
-    required IList<ViewNode> nodeList, // must be non empty
+    required ViewBranch node,
     Move? lastMove,
     PuzzleResult? result,
     PuzzleFeedback? feedback,
+    required bool canViewSolution,
     required bool isLocalEvalEnabled,
     required bool resultSent,
     required bool isChangingDifficulty,
@@ -523,11 +534,12 @@ class PuzzleCtrlState with _$PuzzleCtrlState {
         variant: Variant.standard,
         initialFen: initialFen,
         contextId: puzzle.puzzle.id,
+        multiPv: 1,
+        cores: maxEngineCores,
       );
 
-  ViewNode get node => nodeList.last;
-  Position get position => nodeList.last.position;
-  String get fen => nodeList.last.fen;
+  Position get position => node.position;
+  String get fen => node.fen;
   bool get canGoNext => mode == PuzzleMode.view && node.children.isNotEmpty;
   bool get canGoBack =>
       mode == PuzzleMode.view && currentPath.size > initialPath.size;

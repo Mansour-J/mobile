@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +8,7 @@ import 'package:chessground/chessground.dart' as cg;
 
 import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/model/auth/auth_socket.dart';
-import 'package:lichess_mobile/src/model/settings/play_preferences.dart';
+import 'package:lichess_mobile/src/model/lobby/game_seek.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/widgets/board_table.dart';
@@ -21,7 +22,7 @@ Stream<({int nbPlayers, int nbGames})> lobbyNumbers(
   LobbyNumbersRef ref,
 ) async* {
   final socket = ref.watch(authSocketProvider);
-  final stream = socket.connect();
+  final stream = socket.stream ?? const Stream.empty();
   await for (final msg in stream) {
     if (msg.topic == 'n') {
       final data = msg.data as Map<String, int>;
@@ -34,13 +35,12 @@ Stream<({int nbPlayers, int nbGames})> lobbyNumbers(
 }
 
 class GameLoader extends ConsumerWidget {
-  const GameLoader();
+  const GameLoader(this.seek);
+
+  final GameSeek seek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final timeControlPref = ref
-        .watch(playPreferencesProvider.select((prefs) => prefs.timeIncrement));
-
     return Column(
       children: [
         Expanded(
@@ -69,12 +69,12 @@ class GameLoader extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            timeControlPref.speed.icon,
+                            seek.perf.icon,
                             color: DefaultTextStyle.of(context).style.color,
                           ),
                           const SizedBox(width: 8.0),
                           Text(
-                            timeControlPref.display,
+                            seek.timeIncrement.display,
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ],
@@ -187,11 +187,15 @@ class _LobbyNumbers extends ConsumerWidget {
           ),
         ],
       ),
-      loading: () => const Column(
+      loading: () => Column(
         children: [
-          Text(''),
-          SizedBox(height: 8.0),
-          Text(''),
+          Text(
+            context.l10n.nbPlayers(0).replaceAll('0', '...'),
+          ),
+          const SizedBox(height: 8.0),
+          Text(
+            context.l10n.nbGamesInPlay(0).replaceAll('0', '...'),
+          ),
         ],
       ),
       error: (err, __) {
@@ -200,6 +204,12 @@ class _LobbyNumbers extends ConsumerWidget {
     );
   }
 }
+
+const _lobbyNumbersStyle = TextStyle(
+  fontFeatures: [
+    FontFeature.tabularFigures(),
+  ],
+);
 
 class _AnimatedLobbyNumber extends StatefulWidget {
   const _AnimatedLobbyNumber({
@@ -219,6 +229,13 @@ class _AnimatedLobbyNumberState extends State<_AnimatedLobbyNumber> {
   int value = 0;
 
   @override
+  void initState() {
+    super.initState();
+    previousValue = widget.value;
+    value = widget.value;
+  }
+
+  @override
   void didUpdateWidget(covariant _AnimatedLobbyNumber oldWidget) {
     previousValue = oldWidget.value;
     value = widget.value;
@@ -232,9 +249,10 @@ class _AnimatedLobbyNumberState extends State<_AnimatedLobbyNumber> {
         begin: previousValue,
         end: value,
       ),
+      curve: Curves.linear,
       duration: const Duration(seconds: 3),
       builder: (context, int value, _) {
-        return Text(widget.labelBuilder(value));
+        return Text(widget.labelBuilder(value), style: _lobbyNumbersStyle);
       },
     );
   }

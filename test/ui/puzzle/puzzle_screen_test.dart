@@ -216,6 +216,9 @@ void main() {
 
         expect(find.text('Success!'), findsNothing);
         expect(find.text('Your turn'), findsOneWidget);
+
+        // await for view solution timer
+        await tester.pump(const Duration(seconds: 4));
       },
       variant: kPlatformVariant,
     );
@@ -247,7 +250,7 @@ void main() {
             puzzleBatchStorageProvider.overrideWith((ref) {
               return mockBatchStorage;
             }),
-            puzzleStorageProvider.overrideWith((ref) => mockHistoryStorage)
+            puzzleStorageProvider.overrideWith((ref) => mockHistoryStorage),
           ],
         );
 
@@ -365,8 +368,8 @@ void main() {
         expect(find.byType(cg.Board), findsOneWidget);
         expect(find.text('Your turn'), findsOneWidget);
 
-        // await for first move to be played
-        await tester.pump(const Duration(milliseconds: 1500));
+        // await for first move to be played and view solution button to appear
+        await tester.pump(const Duration(seconds: 5));
 
         expect(find.byKey(const Key('g4-blackRook')), findsOneWidget);
 

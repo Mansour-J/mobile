@@ -28,23 +28,42 @@ Instructions to install both are found in [the lila wiki](https://github.com/lic
 
 The mobile application is configured by default to target `http://127.0.0.1:9663` and `ws://127.0.0.1:9664`, so keep these when installing lila.
 
-
 ## Run
 
 First run the code generator:
 
 ```
+flutter pub get
 dart run build_runner watch
 ```
 
-Then use flutter run:
+Check you have some connected device with: `flutter devices`.
+
+If you target an android device you need to run these commands so the device can reach the local lila instance:
+```
+adb reverse tcp:9663 tcp:9663
+adb reverse tcp:9664 tcp:9664
+```
+
+Then run on your device:
 
 ```
-flutter run
+flutter run -d <my_device>
 ```
 
-Read the [wiki](https://github.com/lichess-org/mobile/wiki) for more information.
+You can find more information about emulators [in the wiki](https://github.com/lichess-org/mobile/wiki/Setting-up-device-emulators).
+
+You can find more information about the `flutter run` command by running `flutter run --help`.
 
 ## Internationalisation
 
-Don't edit the `app_en.arb` file by hand, this file is generated. More information [here](https://github.com/lichess-org/mobile/wiki/About-internationalisation).
+Do not edit the `app_en.arb` file by hand, this file is generated. 
+More information [in the wiki](https://github.com/lichess-org/mobile/wiki/About-internationalisation).
+
+## Releasing
+
+Only for members of lichess team.
+
+1. Bump the pubspec.yaml version number. This can be in a PR making a change or a separate PR. Use semantic versioning to determine which part to increment. The version number after the + should also be incremented. For example 0.3.3+000303 with a patch should become 0.3.4+000304.
+2. Run workflow [Draft GitHub Release](https://github.com/lichess-org/mobile/actions/workflows/draft_github_release.yml)
+3. Run workflow [Deploy to Play Store](https://github.com/lichess-org/mobile/actions/workflows/deploy_play_store.yml)

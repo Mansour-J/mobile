@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:soundpool/soundpool.dart';
@@ -26,7 +27,7 @@ typedef SoundMap = IMap<Sound, int>;
 SoundService soundService(SoundServiceRef ref) {
   // requireValue is possible because appDependenciesProvider is loaded before
   // anything. See: lib/src/app.dart
-  final deps = ref.watch(appDependenciesProvider).requireValue;
+  final deps = ref.read(appDependenciesProvider).requireValue;
   final (pool, sounds) = deps.soundPool;
   return SoundService(pool, sounds, ref);
 }
@@ -52,11 +53,20 @@ Future<(Soundpool, SoundMap)> soundPool(
   return (pool, sounds);
 }
 
+final extension = defaultTargetPlatform == TargetPlatform.iOS ? 'aifc' : 'mp3';
+
 Future<SoundMap> loadSounds(Soundpool pool, SoundTheme soundTheme) async {
+  await pool.release();
   return IMap({
     for (final sound in Sound.values)
       sound: await rootBundle
-          .load('assets/sounds/${soundTheme.name}/${sound.name}.mp3')
+          .load('assets/sounds/${soundTheme.name}/${sound.name}.$extension')
+          // on iOS if aifc file is not found, load mp3
+          .catchError(
+            (_) => rootBundle
+                .load('assets/sounds/${soundTheme.name}/${sound.name}.mp3'),
+          )
+          // if not found, load standard theme sound
           .catchError(
             (_) => rootBundle.load('assets/sounds/standard/${sound.name}.mp3'),
           )

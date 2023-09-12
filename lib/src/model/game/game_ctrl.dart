@@ -16,6 +16,7 @@ import 'package:lichess_mobile/src/model/game/game.dart';
 import 'package:lichess_mobile/src/model/game/game_status.dart';
 import 'package:lichess_mobile/src/model/game/game_socket_events.dart';
 import 'package:lichess_mobile/src/model/game/material_diff.dart';
+import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
 import 'package:lichess_mobile/src/utils/rate_limit.dart';
 
 part 'game_ctrl.freezed.dart';
@@ -24,18 +25,33 @@ part 'game_ctrl.g.dart';
 @riverpod
 class GameCtrl extends _$GameCtrl {
   final _logger = Logger('GameCtrl');
+
   StreamSubscription<SocketEvent>? _socketSubscription;
+
+  /// Periodic timer when the opponent has left the game, to display the countdown
+  /// until the player can claim victory.
   Timer? _opponentLeftCountdownTimer;
+
+  /// Tracks moves that were played on the board, sent to the server, possibly
+  /// acked, but without a move response from the server yet.
+  /// After a delay, it will trigger a reload. This might fix bugs where the
+  /// board is in a transient, dirty state, where clocks don't tick, eventually
+  /// causing the player to flag.
+  /// It will also help with lila-ws restarts.
+  Timer? _transientMoveTimer;
 
   final _onFlagThrottler = Throttler(const Duration(milliseconds: 500));
 
   /// Last socket version received
   int _socketEventVersion = 0;
 
+  /// Last move time
+  DateTime? _lastMoveTime;
+
   @override
   Future<GameCtrlState> build(GameFullId gameFullId) {
     final socket = ref.watch(authSocketProvider);
-    final stream = socket.connect();
+    final (stream, _) = socket.connect(Uri(path: '/play/$gameFullId/v6'));
 
     final state = stream.firstWhere((e) => e.topic == 'full').then((event) {
       final fullEvent =
@@ -48,20 +64,20 @@ class GameCtrl extends _$GameCtrl {
       return GameCtrlState(
         game: fullEvent.game,
         stepCursor: fullEvent.game.steps.length - 1,
+        stopClockWaitingForServerAck: false,
       );
     });
 
     ref.onDispose(() {
       _socketSubscription?.cancel();
       _opponentLeftCountdownTimer?.cancel();
+      _transientMoveTimer?.cancel();
     });
-
-    socket.switchRoute(Uri(path: '/play/$gameFullId/v6'));
 
     return state;
   }
 
-  void onUserMove(Move move) {
+  void onUserMove(Move move, {bool? isDrop, bool? isPremove}) {
     final curState = state.requireValue;
 
     final (newPos, newSan) = curState.game.lastPosition.playToSan(move);
@@ -79,12 +95,22 @@ class GameCtrl extends _$GameCtrl {
           steps: curState.game.steps.add(newStep),
         ),
         stepCursor: curState.stepCursor + 1,
+        stopClockWaitingForServerAck: true,
       ),
     );
 
-    _sendMove(move);
+    _sendMove(
+      move,
+      isPremove: isPremove ?? false,
+      hasClock: curState.game.clock != null,
+      // same logic as web client
+      // we want to send client lag only at the beginning of the game when the clock is not running yet
+      withLag: curState.game.clock != null && curState.activeClockSide == null,
+    );
 
-    _playMoveFeedback(sanMove);
+    _playMoveFeedback(sanMove, skipAnimationDelay: isDrop ?? false);
+
+    _transientMoveTimer = Timer(const Duration(seconds: 10), _resyncGameData);
   }
 
   void cursorAt(int cursor) {
@@ -98,7 +124,7 @@ class GameCtrl extends _$GameCtrl {
     }
   }
 
-  void cursorForward({bool hapticFeedback = true}) {
+  void cursorForward() {
     if (state.hasValue) {
       final curState = state.requireValue;
       final newCursor = curState.stepCursor + 1;
@@ -106,7 +132,6 @@ class GameCtrl extends _$GameCtrl {
       final san = curState.game.stepAt(newCursor).sanMove?.san;
       if (san != null) {
         _playReplayMoveSound(san);
-        if (hapticFeedback) HapticFeedback.lightImpact();
       }
     }
   }
@@ -179,19 +204,48 @@ class GameCtrl extends _$GameCtrl {
     _socket.send('rematch-no', null);
   }
 
-  // TODO: blur, lag
-  void _sendMove(Move move) {
+  void _sendMove(
+    Move move, {
+    required bool isPremove,
+    required bool hasClock,
+    required bool withLag,
+  }) {
+    final moveTime = hasClock
+        ? isPremove == true
+            ? Duration.zero
+            : _lastMoveTime != null
+                ? DateTime.now().difference(_lastMoveTime!)
+                : null
+        : null;
     _socket.send(
       'move',
       {
         'u': move.uci,
+        if (moveTime != null)
+          's': (moveTime.inMilliseconds * 0.1).round().toRadixString(36),
       },
       ackable: true,
+      withLag: hasClock && (moveTime == null || withLag),
     );
   }
 
   /// Move feedback while playing
-  void _playMoveFeedback(SanMove sanMove) {
+  void _playMoveFeedback(SanMove sanMove, {bool skipAnimationDelay = false}) {
+    final animationDuration =
+        ref.read(boardPreferencesProvider).pieceAnimationDuration;
+
+    final delay = animationDuration - const Duration(milliseconds: 10);
+
+    if (skipAnimationDelay || delay <= Duration.zero) {
+      _moveFeedback(sanMove);
+    } else {
+      Timer(delay, () {
+        _moveFeedback(sanMove);
+      });
+    }
+  }
+
+  void _moveFeedback(SanMove sanMove) {
     final isCheck = sanMove.san.contains('+');
     if (sanMove.san.contains('x')) {
       ref.read(moveFeedbackServiceProvider).captureFeedback(check: isCheck);
@@ -213,7 +267,7 @@ class GameCtrl extends _$GameCtrl {
   /// Resync full game data with the server
   void _resyncGameData() {
     _logger.info('Resyncing game data');
-    _socket.switchRoute(Uri(path: '/play/$gameFullId/v6'));
+    _socket.connect(Uri(path: '/play/$gameFullId/v6'), forceReconnect: true);
   }
 
   void _handleSocketEvent(SocketEvent event) {
@@ -272,18 +326,22 @@ class GameCtrl extends _$GameCtrl {
           return;
         }
         _socketEventVersion = fullEvent.socketEventVersion;
+        _lastMoveTime = null;
 
         state = AsyncValue.data(
           GameCtrlState(
             game: fullEvent.game,
             stepCursor: fullEvent.game.steps.length - 1,
+            stopClockWaitingForServerAck: false,
           ),
         );
 
-      // Move event, received after sending a move or receiving a move from the opponent
+      // Move event, received after sending a move or receiving a move from the
+      // opponent
       case 'move':
         final curState = state.requireValue;
         final data = MoveEvent.fromJson(event.data as Map<String, dynamic>);
+        final playedSide = data.ply.isOdd ? Side.white : Side.black;
 
         GameCtrlState newState = curState.copyWith(
           game: curState.game.copyWith(
@@ -292,6 +350,10 @@ class GameCtrl extends _$GameCtrl {
             status: data.status ?? curState.game.status,
           ),
         );
+
+        if (playedSide == curState.game.youAre) {
+          _transientMoveTimer?.cancel();
+        }
 
         // add opponent move
         if (data.ply == curState.game.lastPly + 1) {
@@ -317,18 +379,19 @@ class GameCtrl extends _$GameCtrl {
               stepCursor: newState.stepCursor + 1,
             );
 
-            // TODO adjust with animation duration pref
-            Timer(const Duration(milliseconds: 50), () {
-              _playMoveFeedback(sanMove);
-            });
+            _playMoveFeedback(sanMove);
           }
         }
 
-        // TODO handle lag
+        // TODO handle delay
         if (newState.game.clock != null && data.clock != null) {
+          _lastMoveTime = DateTime.now();
           newState = newState.copyWith.game.clock!(
             white: data.clock!.white,
             black: data.clock!.black,
+          );
+          newState = newState.copyWith(
+            stopClockWaitingForServerAck: false,
           );
         }
 
@@ -376,7 +439,9 @@ class GameCtrl extends _$GameCtrl {
         }
 
         if (curState.game.lastPosition.fullmoves > 1) {
-          ref.read(soundServiceProvider).play(Sound.dong);
+          Timer(const Duration(milliseconds: 500), () {
+            ref.read(soundServiceProvider).play(Sound.dong);
+          });
         }
         state = AsyncValue.data(newState);
 
@@ -576,6 +641,7 @@ class GameCtrlState with _$GameCtrlState {
     required int stepCursor,
     int? lastDrawOfferAtPly,
     Duration? opponentLeftCountdown,
+    required bool stopClockWaitingForServerAck,
 
     /// Game full id used to redirect to the new game of the rematch
     GameFullId? redirectGameId,
@@ -625,6 +691,10 @@ class GameCtrlState with _$GameCtrlState {
 
   Side? get activeClockSide {
     if (game.clock == null) {
+      return null;
+    }
+
+    if (stopClockWaitingForServerAck) {
       return null;
     }
 

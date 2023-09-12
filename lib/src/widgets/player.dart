@@ -5,10 +5,10 @@ import 'package:lichess_mobile/src/model/game/material_diff.dart';
 import 'package:dartchess/dartchess.dart';
 
 import 'package:lichess_mobile/src/styles/lichess_colors.dart';
+import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/model/game/player.dart';
-import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/utils/navigation.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/view/user/user_screen.dart';
@@ -24,6 +24,7 @@ class BoardPlayer extends StatelessWidget {
     this.timeToMove,
     this.shouldLinkToUserProfile = true,
     this.mePlaying = false,
+    this.zenMode = false,
     super.key,
   });
 
@@ -32,13 +33,14 @@ class BoardPlayer extends StatelessWidget {
   final MaterialDiffSide? materialDiff;
   final bool shouldLinkToUserProfile;
   final bool mePlaying;
+  final bool zenMode;
 
   /// Time left for the player to move at the start of the game.
   final Duration? timeToMove;
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.sizeOf(context).height;
     final playerFontSize =
         screenHeight < kSmallHeightScreenThreshold ? 14.0 : 16.0;
 
@@ -135,7 +137,7 @@ class BoardPlayer extends StatelessWidget {
                 materialDiff != null && materialDiff!.score > 0
                     ? '+${materialDiff!.score}'
                     : '',
-              )
+              ),
             ],
           )
         else
@@ -147,25 +149,26 @@ class BoardPlayer extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: shouldLinkToUserProfile
-                ? GestureDetector(
-                    onTap: player.lightUser != null
-                        ? () {
-                            pushPlatformRoute(
-                              context,
-                              builder: (context) =>
-                                  UserScreen(user: player.lightUser!),
-                            );
-                          }
-                        : null,
-                    child: playerWidget,
-                  )
-                : playerWidget,
+        if (!zenMode || timeToMove != null)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: shouldLinkToUserProfile
+                  ? GestureDetector(
+                      onTap: player.lightUser != null
+                          ? () {
+                              pushPlatformRoute(
+                                context,
+                                builder: (context) =>
+                                    UserScreen(user: player.lightUser!),
+                              );
+                            }
+                          : null,
+                      child: playerWidget,
+                    )
+                  : playerWidget,
+            ),
           ),
-        ),
         if (clock != null) clock!,
       ],
     );
@@ -270,6 +273,7 @@ class PlayerTitle extends StatelessWidget {
     required this.userName,
     this.title,
     this.rating,
+    this.isPatron,
     this.style,
     super.key,
   });
@@ -277,6 +281,7 @@ class PlayerTitle extends StatelessWidget {
   final String userName;
   final String? title;
   final int? rating;
+  final bool? isPatron;
   final TextStyle? style;
 
   @override
@@ -285,6 +290,15 @@ class PlayerTitle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (isPatron == true)
+          Padding(
+            padding: const EdgeInsets.only(right: 5),
+            child: Icon(
+              LichessIcons.patron,
+              size: DefaultTextStyle.of(context).style.fontSize,
+              color: DefaultTextStyle.of(context).style.color,
+            ),
+          ),
         if (title != null) ...[
           Text(
             title!,
@@ -293,7 +307,7 @@ class PlayerTitle extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(width: 5)
+          const SizedBox(width: 5),
         ],
         Flexible(
           child: Text(

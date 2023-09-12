@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/settings.dart';
-import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
+import 'package:lichess_mobile/src/utils/l10n_context.dart';
 
 class BoardSettingsScreen extends StatelessWidget {
   const BoardSettingsScreen({super.key});
@@ -21,20 +21,22 @@ class BoardSettingsScreen extends StatelessWidget {
 
   Widget _androidBuilder(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.background)),
-      body: _Body(),
+      appBar: AppBar(title: const Text('Chessboard')),
+      body: const _Body(),
     );
   }
 
   Widget _iosBuilder(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(),
+    return const CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(),
       child: _Body(),
     );
   }
 }
 
 class _Body extends ConsumerWidget {
+  const _Body();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final boardPrefs = ref.watch(boardPreferencesProvider);
@@ -44,7 +46,7 @@ class _Body extends ConsumerWidget {
         children: [
           ListSection(
             hasLeading: false,
-            showDivider: true,
+            showDivider: false,
             children: [
               SwitchSettingTile(
                 title: const Text('Haptic feedback'),
@@ -56,12 +58,51 @@ class _Body extends ConsumerWidget {
                 },
               ),
               SwitchSettingTile(
-                title: const Text('Show legal moves'),
+                title: Text(
+                  context.l10n.preferencesPieceDestinations,
+                  maxLines: 2,
+                ),
                 value: boardPrefs.showLegalMoves,
                 onChanged: (value) {
                   ref
                       .read(boardPreferencesProvider.notifier)
                       .toggleShowLegalMoves();
+                },
+              ),
+              SwitchSettingTile(
+                title: Text(
+                  context.l10n.preferencesBoardHighlights,
+                  maxLines: 2,
+                ),
+                value: boardPrefs.boardHighlights,
+                onChanged: (value) {
+                  ref
+                      .read(boardPreferencesProvider.notifier)
+                      .toggleBoardHighlights();
+                },
+              ),
+              SwitchSettingTile(
+                title: Text(
+                  context.l10n.preferencesBoardCoordinates,
+                  maxLines: 2,
+                ),
+                value: boardPrefs.coordinates,
+                onChanged: (value) {
+                  ref
+                      .read(boardPreferencesProvider.notifier)
+                      .toggleCoordinates();
+                },
+              ),
+              SwitchSettingTile(
+                title: Text(
+                  context.l10n.preferencesPieceAnimation,
+                  maxLines: 2,
+                ),
+                value: boardPrefs.pieceAnimation,
+                onChanged: (value) {
+                  ref
+                      .read(boardPreferencesProvider.notifier)
+                      .togglePieceAnimation();
                 },
               ),
             ],

@@ -21,7 +21,7 @@ class BoardThemeScreen extends StatelessWidget {
 
   Widget _androidBuilder(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.background)),
+      appBar: AppBar(title: Text(context.l10n.boardTheme)),
       body: _Body(),
     );
   }
@@ -65,7 +65,7 @@ class _Body extends ConsumerWidget {
               ),
             ),
             onSelectedItemChanged: onChanged,
-          )
+          ),
         ],
       ),
     );

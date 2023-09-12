@@ -20,12 +20,7 @@ class BoardPreferences extends _$BoardPreferences {
         ? BoardPrefs.fromJson(
             jsonDecode(stored) as Map<String, dynamic>,
           )
-        : const BoardPrefs(
-            pieceSet: PieceSet.staunty,
-            boardTheme: BoardTheme.brown,
-            hapticFeedback: true,
-            showLegalMoves: true,
-          );
+        : BoardPrefs.defaults;
   }
 
   Future<void> setPieceSet(PieceSet pieceSet) {
@@ -44,6 +39,18 @@ class BoardPreferences extends _$BoardPreferences {
     return _save(state.copyWith(showLegalMoves: !state.showLegalMoves));
   }
 
+  Future<void> toggleBoardHighlights() {
+    return _save(state.copyWith(boardHighlights: !state.boardHighlights));
+  }
+
+  Future<void> toggleCoordinates() {
+    return _save(state.copyWith(coordinates: !state.coordinates));
+  }
+
+  Future<void> togglePieceAnimation() {
+    return _save(state.copyWith(pieceAnimation: !state.pieceAnimation));
+  }
+
   Future<void> _save(BoardPrefs newState) async {
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setString(
@@ -56,13 +63,36 @@ class BoardPreferences extends _$BoardPreferences {
 
 @Freezed(fromJson: true, toJson: true)
 class BoardPrefs with _$BoardPrefs {
+  const BoardPrefs._();
+
   const factory BoardPrefs({
     required PieceSet pieceSet,
     required BoardTheme boardTheme,
     required bool hapticFeedback,
     required bool showLegalMoves,
+    required bool boardHighlights,
+    required bool coordinates,
+    required bool pieceAnimation,
   }) = _BoardPrefs;
 
-  factory BoardPrefs.fromJson(Map<String, dynamic> json) =>
-      _$BoardPrefsFromJson(json);
+  static const defaults = BoardPrefs(
+    pieceSet: PieceSet.staunty,
+    boardTheme: BoardTheme.brown,
+    hapticFeedback: true,
+    showLegalMoves: true,
+    boardHighlights: true,
+    coordinates: true,
+    pieceAnimation: true,
+  );
+
+  factory BoardPrefs.fromJson(Map<String, dynamic> json) {
+    try {
+      return _$BoardPrefsFromJson(json);
+    } catch (_) {
+      return defaults;
+    }
+  }
+
+  Duration get pieceAnimationDuration =>
+      pieceAnimation ? const Duration(milliseconds: 150) : Duration.zero;
 }

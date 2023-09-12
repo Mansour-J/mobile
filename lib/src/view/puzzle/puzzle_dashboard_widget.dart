@@ -14,7 +14,7 @@ import 'package:lichess_mobile/src/widgets/stat_card.dart';
 import 'package:lichess_mobile/src/widgets/shimmer.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
-import 'package:lichess_mobile/src/view/puzzle/puzzle_dashboard_screen.dart';
+import 'package:lichess_mobile/src/view/puzzle/puzzle_tab_screen.dart';
 
 class PuzzleDashboardWidget extends ConsumerWidget {
   @override
@@ -61,7 +61,7 @@ class PuzzleDashboardWidget extends ConsumerWidget {
                   ),
                   const SizedBox(height: 30),
                 ],
-              )
+              ),
           ],
         );
       },
@@ -87,7 +87,7 @@ class PuzzleDashboardWidget extends ConsumerWidget {
         );
       },
       loading: () {
-        final loaderHeight = MediaQuery.of(context).size.width;
+        final loaderHeight = MediaQuery.sizeOf(context).width;
         return Shimmer(
           child: ShimmerLoading(
             isLoading: true,

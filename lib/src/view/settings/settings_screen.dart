@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lichess_mobile/src/model/common/service/sound_service.dart';
 
+import 'package:lichess_mobile/src/navigation.dart';
 import 'package:lichess_mobile/src/styles/lichess_icons.dart';
 import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
-import 'package:lichess_mobile/src/widgets/bottom_navigation.dart';
 import 'package:lichess_mobile/src/widgets/list.dart';
 import 'package:lichess_mobile/src/widgets/settings.dart';
 import 'package:lichess_mobile/src/widgets/adaptive_choice_picker.dart';
@@ -170,14 +170,14 @@ class _Body extends ConsumerWidget {
             children: [
               PlatformListTile(
                 leading: const Icon(LichessIcons.chess_board),
-                title: const Text('Board'),
+                title: const Text('Chessboard'),
                 trailing: defaultTargetPlatform == TargetPlatform.iOS
                     ? const CupertinoListTileChevron()
                     : null,
                 onTap: () {
                   pushPlatformRoute(
                     context,
-                    title: 'Board',
+                    title: 'Chessboard',
                     builder: (context) => const BoardSettingsScreen(),
                   );
                 },
@@ -209,7 +209,7 @@ class _Body extends ConsumerWidget {
           Padding(
             padding: Styles.horizontalBodyPadding,
             child: Text(
-              'v${packageInfo.version} (${packageInfo.buildNumber})',
+              'v${packageInfo.version}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

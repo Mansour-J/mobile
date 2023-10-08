@@ -12,42 +12,39 @@ import 'package:lichess_mobile/src/model/common/speed.dart';
 import 'package:lichess_mobile/src/model/game/game.dart';
 import 'package:lichess_mobile/src/model/game/game_status.dart';
 import 'package:lichess_mobile/src/model/game/player.dart';
+import 'package:lichess_mobile/src/model/analysis/analysis_controller.dart';
 import 'package:lichess_mobile/src/view/analysis/analysis_screen.dart';
+import 'package:lichess_mobile/src/view/analysis/tree_view.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 
 import '../../test_app.dart';
 
 void main() {
   // ignore: avoid_dynamic_calls
-  final moves = jsonDecode(gameResponse)['moves'].split(' ') as List<String>;
+  final sanMoves = jsonDecode(gameResponse)['moves'].split(' ') as List<String>;
   Position position = Chess.initial;
-  int index = 0;
-  final List<GameStep> steps = [GameStep(ply: index, position: position)];
+  final List<Move> moves = [];
 
-  for (final san in moves) {
-    index++;
+  for (final san in sanMoves) {
     final move = position.parseSan(san);
     position = position.playUnchecked(move!);
-    steps.add(
-      GameStep(
-        ply: index,
-        sanMove: SanMove(san, move),
-        position: position,
-      ),
-    );
+    moves.add(move);
   }
-
-  final gameStep = steps.toIList();
 
   group('Analysis Screen', () {
     testWidgets('displays correct move and position', (tester) async {
       final app = await buildTestApp(
         tester,
         home: AnalysisScreen(
-          variant: Variant.standard,
-          steps: gameStep,
-          orientation: Side.white,
-          id: gameData.id,
+          options: AnalysisOptions(
+            isLocalEvaluationAllowed: false,
+            variant: Variant.standard,
+            initialFen: Chess.initial.fen,
+            initialPly: 0,
+            moves: moves.toIList(),
+            orientation: Side.white,
+            id: gameData.id,
+          ),
         ),
       );
 
@@ -62,14 +59,20 @@ void main() {
         isTrue,
       );
     });
+
     testWidgets('move backwards and forward', (tester) async {
       final app = await buildTestApp(
         tester,
         home: AnalysisScreen(
-          variant: Variant.standard,
-          steps: gameStep,
-          orientation: Side.white,
-          id: gameData.id,
+          options: AnalysisOptions(
+            isLocalEvaluationAllowed: false,
+            variant: Variant.standard,
+            initialFen: Chess.initial.fen,
+            initialPly: 0,
+            moves: moves.toIList(),
+            orientation: Side.white,
+            id: gameData.id,
+          ),
         ),
       );
 

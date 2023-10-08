@@ -17,15 +17,19 @@ import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/model/auth/auth_session.dart';
 import 'package:lichess_mobile/src/model/lobby/game_seek.dart';
+import 'package:lichess_mobile/src/model/game/game_repository_providers.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_service.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/model/user/user_repository_providers.dart';
+import 'package:lichess_mobile/src/model/user/user.dart';
 import 'package:lichess_mobile/src/model/settings/play_preferences.dart';
+import 'package:lichess_mobile/src/view/account/rating_pref_aware.dart';
 import 'package:lichess_mobile/src/view/auth/sign_in_widget.dart';
 import 'package:lichess_mobile/src/view/puzzle/puzzle_screen.dart';
 import 'package:lichess_mobile/src/view/user/leaderboard_widget.dart';
+import 'package:lichess_mobile/src/view/user/recent_games.dart';
 import 'package:lichess_mobile/src/view/play/play_screen.dart';
 import 'package:lichess_mobile/src/view/game/game_screen.dart';
 
@@ -56,7 +60,8 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
 
         if (!hasRefreshed && !wasOnline && isNowOnline) {
           hasRefreshed = true;
-          _refreshData();
+          final session = ref.read(authSessionProvider);
+          _refreshData(session?.user);
         }
 
         wasOnline = isNowOnline;
@@ -97,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
   }
 
   Widget _androidBuilder(BuildContext context) {
+    final session = ref.watch(authSessionProvider);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -120,7 +126,7 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
       ),
       body: RefreshIndicator(
         key: _androidRefreshKey,
-        onRefresh: _refreshData,
+        onRefresh: () => _refreshData(session?.user),
         child: const _HomeScaffold(
           child: _HomeBody(),
         ),
@@ -129,6 +135,7 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
   }
 
   Widget _iosBuilder(BuildContext context) {
+    final session = ref.watch(authSessionProvider);
     return CupertinoPageScaffold(
       child: _HomeScaffold(
         child: CustomScrollView(
@@ -152,7 +159,7 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
               trailing: const SignInWidget(),
             ),
             CupertinoSliverRefreshControl(
-              onRefresh: _refreshData,
+              onRefresh: () => _refreshData(session?.user),
             ),
             const SliverToBoxAdapter(child: _ConnectivityBanner()),
             const SliverSafeArea(
@@ -165,8 +172,12 @@ class _HomeScreenState extends ConsumerState<HomeTabScreen> with RouteAware {
     );
   }
 
-  Future<void> _refreshData() {
-    return ref.refresh(top1Provider.future);
+  Future<void> _refreshData(LightUser? user) {
+    return Future.wait([
+      ref.refresh(top1Provider.future),
+      if (user != null)
+        ref.refresh(userRecentGamesProvider(userId: user.id).future),
+    ]);
   }
 }
 
@@ -283,6 +294,7 @@ class _HomeBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connectivity = ref.watch(connectivityChangesProvider);
+    final session = ref.watch(authSessionProvider);
     return connectivity.when(
       data: (data) {
         if (data.isOnline) {
@@ -292,14 +304,16 @@ class _HomeBody extends ConsumerWidget {
                   children: [
                     const _CreateAGame(),
                     const _DailyPuzzle(),
-                    LeaderboardWidget(),
+                    if (session != null) RecentGames(user: session.user),
+                    RatingPrefAware(child: LeaderboardWidget()),
                   ],
                 )
               : SliverList(
                   delegate: SliverChildListDelegate([
                     const _CreateAGame(),
                     const _DailyPuzzle(),
-                    LeaderboardWidget(),
+                    if (session != null) RecentGames(user: session.user),
+                    RatingPrefAware(child: LeaderboardWidget()),
                   ]),
                 );
         } else {
@@ -460,7 +474,6 @@ class _DailyPuzzle extends ConsumerWidget {
             pushPlatformRoute(
               context,
               rootNavigator: true,
-              title: context.l10n.puzzleDailyPuzzle,
               builder: (context) => PuzzleScreen(
                 theme: PuzzleTheme.mix,
                 initialPuzzleContext: PuzzleContext(

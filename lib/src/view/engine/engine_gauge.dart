@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dartchess/dartchess.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:lichess_mobile/src/styles/styles.dart';
 import 'package:lichess_mobile/src/model/settings/brightness.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/model/common/eval.dart';
@@ -13,9 +14,9 @@ part 'engine_gauge.freezed.dart';
 
 const double kEvalGaugeSize = 26.0;
 const double kEvalGaugeFontSize = 11.0;
-const Color kEvalGaugeBackgroundColor = Color(0xFF444444);
-const Color kEvalGaugeValueColorDarkBg = Color(0xEEEEEEEE);
-const Color kEvalGaugeValueColorLightBg = Color(0xFFFFFFFF);
+const Color _kEvalGaugeBackgroundColor = Color(0xFF444444);
+const Color _kEvalGaugeValueColorDarkBg = Color(0xEEEEEEEE);
+const Color _kEvalGaugeValueColorLightBg = Color(0xFFFFFFFF);
 
 enum EngineGaugeDisplayMode {
   vertical,
@@ -26,6 +27,9 @@ enum EngineGaugeDisplayMode {
 class EngineGaugeParams with _$EngineGaugeParams {
   const factory EngineGaugeParams({
     required EvaluationContext evaluationContext,
+
+    /// Only used for vertical display mode.
+    required Side orientation,
 
     /// Position to evaluate.
     required Position position,
@@ -45,6 +49,22 @@ class EngineGauge extends ConsumerWidget {
 
   final EngineGaugeParams params;
 
+  static Color backgroundColor(BuildContext context, Brightness brightness) =>
+      defaultTargetPlatform == TargetPlatform.iOS
+          ? _kEvalGaugeBackgroundColor
+          : brightness == Brightness.dark
+              ? lighten(Theme.of(context).colorScheme.background, .07)
+              : lighten(Theme.of(context).colorScheme.onBackground, .17);
+
+  static Color valueColor(BuildContext context, Brightness brightness) =>
+      defaultTargetPlatform == TargetPlatform.iOS
+          ? brightness == Brightness.dark
+              ? _kEvalGaugeValueColorDarkBg
+              : _kEvalGaugeValueColorLightBg
+          : brightness == Brightness.dark
+              ? darken(Theme.of(context).colorScheme.onBackground, .03)
+              : darken(Theme.of(context).colorScheme.background, .01);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eval = ref.watch(engineEvaluationProvider(params.evaluationContext));
@@ -53,15 +73,21 @@ class EngineGauge extends ConsumerWidget {
         ? _EvalGauge(
             displayMode: displayMode,
             position: params.position,
+            orientation: params.orientation,
             eval: eval,
           )
         : params.savedEval != null
             ? _EvalGauge(
                 displayMode: displayMode,
                 position: params.position,
+                orientation: params.orientation,
                 eval: params.savedEval,
               )
-            : _EvalGauge(displayMode: displayMode, position: params.position);
+            : _EvalGauge(
+                displayMode: displayMode,
+                position: params.position,
+                orientation: params.orientation,
+              );
   }
 }
 
@@ -69,12 +95,14 @@ class _EvalGauge extends ConsumerStatefulWidget {
   const _EvalGauge({
     required this.position,
     required this.displayMode,
+    required this.orientation,
     this.eval,
   });
 
   final EngineGaugeDisplayMode displayMode;
   final Position position;
   final ClientEval? eval;
+  final Side orientation;
 
   double get whiteWinningChances => eval?.winningChances(Side.white) ?? 0.0;
   double get animationValue =>
@@ -143,17 +171,16 @@ class _EvalGaugeState extends ConsumerState<_EvalGauge> {
             child: CustomPaint(
               painter: widget.displayMode == EngineGaugeDisplayMode.vertical
                   ? _EvalGaugeVerticalPainter(
-                      backgroundColor: kEvalGaugeBackgroundColor,
-                      valueColor: brightness == Brightness.dark
-                          ? kEvalGaugeValueColorDarkBg
-                          : kEvalGaugeValueColorLightBg,
+                      orientation: widget.orientation,
+                      backgroundColor:
+                          EngineGauge.backgroundColor(context, brightness),
+                      valueColor: EngineGauge.valueColor(context, brightness),
                       value: value,
                     )
                   : _EvalGaugeHorizontalPainter(
-                      backgroundColor: kEvalGaugeBackgroundColor,
-                      valueColor: brightness == Brightness.dark
-                          ? kEvalGaugeValueColorDarkBg
-                          : kEvalGaugeValueColorLightBg,
+                      backgroundColor:
+                          EngineGauge.backgroundColor(context, brightness),
+                      valueColor: EngineGauge.valueColor(context, brightness),
                       value: value,
                       textDirection: textDirection,
                     ),
@@ -237,11 +264,13 @@ class _EvalGaugeVerticalPainter extends CustomPainter {
     required this.backgroundColor,
     required this.valueColor,
     required this.value,
+    required this.orientation,
   });
 
   final Color backgroundColor;
   final Color valueColor;
   final double value;
+  final Side orientation;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -253,14 +282,19 @@ class _EvalGaugeVerticalPainter extends CustomPainter {
     paint.color = valueColor;
 
     void drawBar(double y, double height) {
-      if (height <= 0.0) {
+      if (height == 0.0) {
         return;
       }
 
       canvas.drawRect(Offset(0.0, y) & Size(size.width, height), paint);
     }
 
-    drawBar(0.0, clampDouble(value, 0.0, 1.0) * size.height);
+    final double height = clampDouble(value, 0.0, 1.0) * size.height;
+
+    drawBar(
+      orientation == Side.white ? size.height : 0.0,
+      height * (orientation == Side.white ? -1.0 : 1.0),
+    );
   }
 
   @override

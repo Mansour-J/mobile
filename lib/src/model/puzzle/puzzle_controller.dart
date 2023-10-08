@@ -25,11 +25,11 @@ import 'package:lichess_mobile/src/model/engine/engine_evaluation.dart';
 import 'package:lichess_mobile/src/model/engine/work.dart';
 import 'package:lichess_mobile/src/utils/rate_limit.dart';
 
-part 'puzzle_ctrl.g.dart';
-part 'puzzle_ctrl.freezed.dart';
+part 'puzzle_controller.g.dart';
+part 'puzzle_controller.freezed.dart';
 
 @riverpod
-class PuzzleCtrl extends _$PuzzleCtrl {
+class PuzzleController extends _$PuzzleController {
   // ignore: avoid-late-keyword
   late Branch _gameTree;
   Timer? _firstMoveTimer;
@@ -42,7 +42,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
   final _engineEvalDebounce = Debouncer(const Duration(milliseconds: 100));
 
   @override
-  PuzzleCtrlState build(
+  PuzzleState build(
     PuzzleContext initialContext, {
     PuzzleStreak? initialStreak,
   }) {
@@ -56,7 +56,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     return _loadNewContext(initialContext, initialStreak);
   }
 
-  PuzzleCtrlState _loadNewContext(
+  PuzzleState _loadNewContext(
     PuzzleContext context,
     PuzzleStreak? streak,
   ) {
@@ -65,7 +65,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
 
     // play first move after 1 second
     _firstMoveTimer = Timer(const Duration(seconds: 1), () {
-      _setPath(state.initialPath);
+      _setPath(state.initialPath, firstMove: true);
     });
 
     // enable solution button after 4 seconds
@@ -82,11 +82,11 @@ class PuzzleCtrl extends _$PuzzleCtrl {
       _nextPuzzleFuture = _fetchNextStreakPuzzle(streak);
     }
 
-    return PuzzleCtrlState(
+    return PuzzleState(
       puzzle: context.puzzle,
       glicko: context.glicko,
-      mode: PuzzleMode.play,
-      initialFen: _gameTree.fen,
+      mode: PuzzleMode.load,
+      initialPosition: _gameTree.position,
       initialPath: initialPath,
       currentPath: UciPath.empty,
       node: _gameTree.view,
@@ -384,7 +384,11 @@ class PuzzleCtrl extends _$PuzzleCtrl {
     }
   }
 
-  void _setPath(UciPath path, {bool replaying = false}) {
+  void _setPath(
+    UciPath path, {
+    bool replaying = false,
+    bool firstMove = false,
+  }) {
     final pathChange = state.currentPath != path;
     final newNode = _gameTree.branchAt(path).view;
     final sanMove = newNode.sanMove;
@@ -408,6 +412,7 @@ class PuzzleCtrl extends _$PuzzleCtrl {
       }
     }
     state = state.copyWith(
+      mode: firstMove ? PuzzleMode.play : state.mode,
       currentPath: path,
       node: newNode,
       lastMove: sanMove.move,
@@ -480,7 +485,6 @@ class PuzzleCtrl extends _$PuzzleCtrl {
           nodes.add(
             Branch(
               ply: fromPly + index + 1,
-              fen: newPos.fen,
               position: newPos,
               sanMove: SanMove(newSan, move),
             ),
@@ -492,21 +496,21 @@ class PuzzleCtrl extends _$PuzzleCtrl {
   }
 }
 
-enum PuzzleMode { play, view }
+enum PuzzleMode { load, play, view }
 
 enum PuzzleResult { win, lose }
 
 enum PuzzleFeedback { good, bad }
 
 @freezed
-class PuzzleCtrlState with _$PuzzleCtrlState {
-  const PuzzleCtrlState._();
+class PuzzleState with _$PuzzleState {
+  const PuzzleState._();
 
-  const factory PuzzleCtrlState({
+  const factory PuzzleState({
     required Puzzle puzzle,
     required PuzzleGlicko? glicko,
     required PuzzleMode mode,
-    required String initialFen,
+    required Position initialPosition,
     required UciPath initialPath,
     required UciPath currentPath,
     required Side pov,
@@ -524,7 +528,7 @@ class PuzzleCtrlState with _$PuzzleCtrlState {
     // we will make the user retry
     required bool nextPuzzleStreakFetchError,
     required bool nextPuzzleStreakFetchIsRetrying,
-  }) = _PuzzleScreenState;
+  }) = _PuzzleState;
 
   bool get isEngineEnabled {
     return mode == PuzzleMode.view && isLocalEvalEnabled;
@@ -532,14 +536,14 @@ class PuzzleCtrlState with _$PuzzleCtrlState {
 
   EvaluationContext get evaluationContext => EvaluationContext(
         variant: Variant.standard,
-        initialFen: initialFen,
+        initialPosition: initialPosition,
         contextId: puzzle.puzzle.id,
         multiPv: 1,
         cores: maxEngineCores,
       );
 
   Position get position => node.position;
-  String get fen => node.fen;
+  String get fen => node.position.fen;
   bool get canGoNext => mode == PuzzleMode.view && node.children.isNotEmpty;
   bool get canGoBack =>
       mode == PuzzleMode.view && currentPath.size > initialPath.size;

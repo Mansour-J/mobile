@@ -27,6 +27,8 @@ const _moveListOpacity = 0.6;
 /// An optional overlay or error message can be displayed on top of the board.
 class BoardTable extends ConsumerWidget {
   const BoardTable({
+    this.onMove,
+    this.onPremove,
     required this.boardData,
     this.boardSettingsOverrides,
     required this.topTable,
@@ -43,6 +45,9 @@ class BoardTable extends ConsumerWidget {
           moves == null || currentMoveIndex != null,
           'You must provide `currentMoveIndex` along with `moves`',
         );
+
+  final void Function(Move, {bool? isDrop, bool? isPremove})? onMove;
+  final void Function(Move?)? onPremove;
 
   final BoardData boardData;
 
@@ -89,6 +94,11 @@ class BoardTable extends ConsumerWidget {
             ? defaultBoardSize - kTabletBoardTableSidePadding * 2
             : defaultBoardSize;
 
+        // vertical space left on portrait mode to check if we can display the
+        // move list
+        final verticalSpaceLeftBoardOnPortrait =
+            constraints.biggest.height - boardSize;
+
         final error = errorMessage != null
             ? SizedBox.square(
                 dimension: boardSize,
@@ -124,13 +134,16 @@ class BoardTable extends ConsumerWidget {
         );
 
         final settings = boardSettingsOverrides != null
-            ? defaultSettings.copyWith(
-                animationDuration: boardSettingsOverrides!.animationDuration,
-              )
+            ? boardSettingsOverrides!.merge(defaultSettings)
             : defaultSettings;
 
-        final board =
-            Board(size: boardSize, data: boardData, settings: settings);
+        final board = Board(
+          size: boardSize,
+          data: boardData,
+          settings: settings,
+          onMove: onMove,
+          onPremove: onPremove,
+        );
 
         Widget boardWidget = board;
 
@@ -230,14 +243,16 @@ class BoardTable extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.max,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (slicedMoves != null)
+                  if (slicedMoves != null &&
+                      verticalSpaceLeftBoardOnPortrait >= 130)
                     MoveList(
                       type: MoveListType.inline,
                       slicedMoves: slicedMoves,
                       currentMoveIndex: currentMoveIndex ?? 0,
                       onSelectMove: onSelectMove,
                     )
-                  else if (showMoveListPlaceholder)
+                  else if (showMoveListPlaceholder &&
+                      verticalSpaceLeftBoardOnPortrait >= 130)
                     const SizedBox(height: 40),
                   Expanded(
                     child: Padding(
@@ -280,9 +295,24 @@ class BoardTable extends ConsumerWidget {
 class BoardSettingsOverrides {
   const BoardSettingsOverrides({
     this.animationDuration,
+    this.autoQueenPromotion,
+    this.autoQueenPromotionOnPremove,
+    this.blindfoldMode,
   });
 
   final Duration? animationDuration;
+  final bool? autoQueenPromotion;
+  final bool? autoQueenPromotionOnPremove;
+  final bool? blindfoldMode;
+
+  BoardSettings merge(BoardSettings settings) {
+    return settings.copyWith(
+      animationDuration: animationDuration,
+      autoQueenPromotion: autoQueenPromotion,
+      autoQueenPromotionOnPremove: autoQueenPromotionOnPremove,
+      blindfoldMode: blindfoldMode,
+    );
+  }
 }
 
 enum MoveListType { inline, stacked }
@@ -542,13 +572,4 @@ class StackedMoveItem extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Returns the estimated height of spaces around the board.
-double estimateTableHeight(BuildContext context) {
-  final size = MediaQuery.sizeOf(context);
-  final padding = MediaQuery.paddingOf(context);
-  final safeHeight = size.height - padding.top - padding.bottom;
-  // viewport height - board size - app bar height - bottom bar height
-  return (safeHeight - size.width - 50 - 56) / 2;
 }

@@ -15,7 +15,7 @@ import 'package:lichess_mobile/src/widgets/feedback.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/board_table.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
-import 'package:lichess_mobile/src/model/puzzle/puzzle_ctrl.dart';
+import 'package:lichess_mobile/src/model/puzzle/puzzle_controller.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_difficulty.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_preferences.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
@@ -26,6 +26,7 @@ import 'package:lichess_mobile/src/utils/immersive_mode.dart';
 import 'package:lichess_mobile/src/utils/l10n_context.dart';
 import 'package:lichess_mobile/src/utils/chessground_compat.dart';
 import 'package:lichess_mobile/src/utils/wakelock.dart';
+import 'package:lichess_mobile/src/view/account/rating_pref_aware.dart';
 import 'package:lichess_mobile/src/view/engine/engine_gauge.dart';
 import 'package:lichess_mobile/src/view/settings/toggle_sound_button.dart';
 
@@ -67,6 +68,7 @@ class PuzzleScreen extends StatelessWidget {
   Widget _iosBuilder(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        middle: const Text('Puzzle training'),
         trailing: ToggleSoundButton(),
       ),
       child: initialPuzzleContext != null
@@ -145,7 +147,7 @@ class _BodyState extends ConsumerState<_Body>
     with AndroidImmersiveMode, Wakelock {
   @override
   Widget build(BuildContext context) {
-    final ctrlProvider = puzzleCtrlProvider(widget.initialPuzzleContext);
+    final ctrlProvider = puzzleControllerProvider(widget.initialPuzzleContext);
     final puzzleState = ref.watch(ctrlProvider);
 
     final currentEvalBest = ref.watch(
@@ -162,9 +164,15 @@ class _BodyState extends ConsumerState<_Body>
             child: SafeArea(
               bottom: false,
               child: BoardTable(
+                onMove: (move, {isDrop, isPremove}) {
+                  ref
+                      .read(ctrlProvider.notifier)
+                      .onUserMove(Move.fromUci(move.uci)!);
+                },
                 boardData: cg.BoardData(
                   orientation: puzzleState.pov.cg,
-                  interactableSide: puzzleState.position.isGameOver
+                  interactableSide: puzzleState.mode == PuzzleMode.load ||
+                          puzzleState.position.isGameOver
                       ? cg.InteractableSide.none
                       : puzzleState.mode == PuzzleMode.view
                           ? cg.InteractableSide.both
@@ -185,14 +193,10 @@ class _BodyState extends ConsumerState<_Body>
                           ),
                         ])
                       : null,
-                  onMove: (move, {isDrop, isPremove}) {
-                    ref
-                        .read(ctrlProvider.notifier)
-                        .onUserMove(Move.fromUci(move.uci)!);
-                  },
                 ),
                 engineGauge: puzzleState.isEngineEnabled
                     ? EngineGaugeParams(
+                        orientation: puzzleState.pov,
                         evaluationContext: puzzleState.evaluationContext,
                         position: puzzleState.position,
                         savedEval: puzzleState.node.eval,
@@ -209,32 +213,35 @@ class _BodyState extends ConsumerState<_Body>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (puzzleState.glicko != null)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          top: 10.0,
-                        ),
-                        child: Row(
-                          children: [
-                            Text(context.l10n.rating),
-                            const SizedBox(width: 5.0),
-                            TweenAnimationBuilder<double>(
-                              tween: Tween<double>(
-                                begin: puzzleState.glicko!.rating,
-                                end: puzzleState.nextContext?.glicko?.rating ??
-                                    puzzleState.glicko!.rating,
+                      RatingPrefAware(
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            top: 10.0,
+                          ),
+                          child: Row(
+                            children: [
+                              Text(context.l10n.rating),
+                              const SizedBox(width: 5.0),
+                              TweenAnimationBuilder<double>(
+                                tween: Tween<double>(
+                                  begin: puzzleState.glicko!.rating,
+                                  end:
+                                      puzzleState.nextContext?.glicko?.rating ??
+                                          puzzleState.glicko!.rating,
+                                ),
+                                duration: const Duration(milliseconds: 500),
+                                builder: (context, double rating, _) {
+                                  return Text(
+                                    rating.truncate().toString(),
+                                    style: const TextStyle(
+                                      fontSize: 16.0,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  );
+                                },
                               ),
-                              duration: const Duration(milliseconds: 500),
-                              builder: (context, double rating, _) {
-                                return Text(
-                                  rating.truncate().toString(),
-                                  style: const TextStyle(
-                                    fontSize: 16.0,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     PuzzleSessionWidget(
@@ -263,7 +270,7 @@ class _BottomBar extends ConsumerWidget {
   });
 
   final PuzzleContext initialPuzzleContext;
-  final PuzzleCtrlProvider ctrlProvider;
+  final PuzzleControllerProvider ctrlProvider;
 
   static const _repeatTriggerDelays = [
     Duration(milliseconds: 500),
@@ -388,7 +395,7 @@ class _DifficultySelector extends ConsumerWidget {
   });
 
   final PuzzleContext initialPuzzleContext;
-  final PuzzleCtrlProvider ctrlProvider;
+  final PuzzleControllerProvider ctrlProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

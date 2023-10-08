@@ -16,7 +16,7 @@ import 'package:lichess_mobile/src/widgets/buttons.dart';
 import 'package:lichess_mobile/src/widgets/board_table.dart';
 import 'package:lichess_mobile/src/widgets/platform.dart';
 import 'package:lichess_mobile/src/model/auth/auth_session.dart';
-import 'package:lichess_mobile/src/model/puzzle/puzzle_ctrl.dart';
+import 'package:lichess_mobile/src/model/puzzle/puzzle_controller.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_streak.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_service.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
@@ -126,7 +126,7 @@ class _BodyState extends ConsumerState<_Body>
     with AndroidImmersiveMode, Wakelock {
   @override
   Widget build(BuildContext context) {
-    final ctrlProvider = puzzleCtrlProvider(
+    final ctrlProvider = puzzleControllerProvider(
       widget.initialPuzzleContext,
       initialStreak: widget.streak,
     );
@@ -150,9 +150,15 @@ class _BodyState extends ConsumerState<_Body>
           child: Center(
             child: SafeArea(
               child: BoardTable(
+                onMove: (move, {isDrop, isPremove}) {
+                  ref
+                      .read(ctrlProvider.notifier)
+                      .onUserMove(Move.fromUci(move.uci)!);
+                },
                 boardData: cg.BoardData(
                   orientation: puzzleState.pov.cg,
-                  interactableSide: puzzleState.position.isGameOver
+                  interactableSide: puzzleState.mode == PuzzleMode.load ||
+                          puzzleState.position.isGameOver
                       ? cg.InteractableSide.none
                       : puzzleState.mode == PuzzleMode.view
                           ? cg.InteractableSide.both
@@ -164,11 +170,6 @@ class _BodyState extends ConsumerState<_Body>
                   lastMove: puzzleState.lastMove?.cg,
                   sideToMove: puzzleState.position.turn.cg,
                   validMoves: puzzleState.validMoves,
-                  onMove: (move, {isDrop, isPremove}) {
-                    ref
-                        .read(ctrlProvider.notifier)
-                        .onUserMove(Move.fromUci(move.uci)!);
-                  },
                 ),
                 topTable: Center(
                   child: Padding(
@@ -260,7 +261,7 @@ class _BottomBar extends ConsumerWidget {
   });
 
   final PuzzleContext initialPuzzleContext;
-  final PuzzleCtrlProvider ctrlProvider;
+  final PuzzleControllerProvider ctrlProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -377,7 +378,7 @@ class _RetryFetchPuzzleDialog extends ConsumerWidget {
     required this.ctrlProvider,
   });
 
-  final PuzzleCtrlProvider ctrlProvider;
+  final PuzzleControllerProvider ctrlProvider;
 
   static const title = 'Could not fetch the puzzle';
   static const content = 'Please check your internet connection and try again.';

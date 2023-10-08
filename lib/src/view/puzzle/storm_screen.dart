@@ -16,7 +16,7 @@ import 'package:lichess_mobile/src/constants.dart';
 import 'package:lichess_mobile/src/model/puzzle/storm.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_providers.dart';
 import 'package:lichess_mobile/src/model/puzzle/puzzle_repository.dart';
-import 'package:lichess_mobile/src/model/puzzle/storm_ctrl.dart';
+import 'package:lichess_mobile/src/model/puzzle/storm_controller.dart';
 import 'package:lichess_mobile/src/model/settings/board_preferences.dart';
 import 'package:lichess_mobile/src/styles/lichess_colors.dart';
 import 'package:lichess_mobile/src/styles/lichess_icons.dart';
@@ -114,9 +114,8 @@ class _BodyState extends ConsumerState<_Body>
     with AndroidImmersiveMode, Wakelock {
   @override
   Widget build(BuildContext context) {
-    final ctrlProvider = stormCtrlProvider(widget.data.puzzles);
+    final ctrlProvider = stormControllerProvider(widget.data.puzzles);
     final puzzleState = ref.watch(ctrlProvider);
-
     ref.listen(ctrlProvider.select((state) => state.runOver), (_, s) {
       if (s) {
         Future.delayed(const Duration(milliseconds: 200), () {
@@ -132,22 +131,26 @@ class _BodyState extends ConsumerState<_Body>
             child: SafeArea(
               bottom: false,
               child: BoardTable(
+                onMove: (move, {isDrop, isPremove}) => ref
+                    .read(ctrlProvider.notifier)
+                    .onUserMove(Move.fromUci(move.uci)!),
+                onPremove: (move) =>
+                    ref.read(ctrlProvider.notifier).setPremove(move),
                 boardData: cg.BoardData(
-                  onMove: (move, {isDrop, isPremove}) => ref
-                      .read(ctrlProvider.notifier)
-                      .onUserMove(Move.fromUci(move.uci)!),
                   orientation: puzzleState.pov.cg,
-                  interactableSide:
-                      puzzleState.runOver || puzzleState.position.isGameOver
-                          ? cg.InteractableSide.none
-                          : puzzleState.pov == Side.white
-                              ? cg.InteractableSide.white
-                              : cg.InteractableSide.black,
+                  interactableSide: !puzzleState.firstMovePlayed ||
+                          puzzleState.runOver ||
+                          puzzleState.position.isGameOver
+                      ? cg.InteractableSide.none
+                      : puzzleState.pov == Side.white
+                          ? cg.InteractableSide.white
+                          : cg.InteractableSide.black,
                   fen: puzzleState.position.fen,
                   isCheck: puzzleState.position.isCheck,
                   lastMove: puzzleState.lastMove?.cg,
                   sideToMove: puzzleState.position.turn.cg,
                   validMoves: puzzleState.validMoves,
+                  premove: puzzleState.premove,
                 ),
                 topTable: _TopTable(
                   ctrl: ctrlProvider,
@@ -292,7 +295,7 @@ class _TopTable extends ConsumerWidget {
     required this.ctrl,
   });
 
-  final StormCtrlProvider ctrl;
+  final StormControllerProvider ctrl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -571,7 +574,7 @@ class _ComboState extends ConsumerState<_Combo>
 class _BottomBar extends ConsumerWidget {
   const _BottomBar(this.ctrl);
 
-  final StormCtrlProvider ctrl;
+  final StormControllerProvider ctrl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

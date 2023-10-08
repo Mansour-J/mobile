@@ -7,6 +7,7 @@ import 'package:lichess_mobile/src/model/common/id.dart';
 import 'package:lichess_mobile/src/model/common/perf.dart';
 import 'package:lichess_mobile/src/model/common/speed.dart';
 import 'package:lichess_mobile/src/model/common/time_increment.dart';
+import 'package:lichess_mobile/src/model/account/account_preferences.dart';
 
 import 'player.dart';
 import 'game_status.dart';
@@ -42,9 +43,15 @@ mixin IndexableSteps on BaseGame {
     return steps.last.sanMove?.move;
   }
 
+  Position get initialPosition => steps.first.position;
+  int get initialPly => steps.first.ply;
+
   Position get lastPosition => steps.last.position;
 
   int get lastPly => steps.last.ply;
+
+  MaterialDiffSide? lastMaterialDiffAt(Side side) =>
+      steps.last.diff?.bySide(side);
 }
 
 @freezed
@@ -58,10 +65,13 @@ class PlayableGame with _$PlayableGame, BaseGame, IndexableSteps {
     required Player white,
     required Player black,
     required GameStatus status,
+    required bool moretimeable,
+    required bool takebackable,
 
     /// The side that the current player is playing as. This is null if viewing
     /// the game as a spectator.
     Side? youAre,
+    GamePrefs? prefs,
     PlayableClockData? clock,
     bool? boosted,
     bool? isThreefoldRepetition,
@@ -98,12 +108,13 @@ class PlayableGame with _$PlayableGame, BaseGame, IndexableSteps {
       !hasAI;
   bool get rematchable =>
       meta.rules == null || !meta.rules!.contains(GameRule.noRematch);
-  bool get takebackable =>
+  bool get canTakeback =>
+      takebackable &&
       playable &&
       lastPosition.fullmoves >= 2 &&
       !(player?.proposingTakeback == true) &&
       !(opponent?.proposingTakeback == true);
-  bool get moretimeable => playable && clock != null;
+  bool get canGiveTime => moretimeable && playable && clock != null;
 
   bool get canClaimWin =>
       opponent?.isGone == true &&
@@ -111,6 +122,15 @@ class PlayableGame with _$PlayableGame, BaseGame, IndexableSteps {
       resignable &&
       (meta.rules == null || !meta.rules!.contains(GameRule.noClaimWin));
 }
+
+typedef GamePrefs = ({
+  bool showRatings,
+  bool enablePremove,
+  AutoQueen autoQueen,
+  bool confirmResign,
+  bool submitMove,
+  Zen zenMode,
+});
 
 enum GameSource {
   lobby,
@@ -133,7 +153,6 @@ enum GameSource {
 enum GameRule {
   noAbort,
   noRematch,
-  noGiveTime,
   noClaimWin,
   unknown;
 
@@ -189,6 +208,7 @@ class ArchivedGameData with _$ArchivedGameData {
     required Player white,
     required Player black,
     required Variant variant,
+    LightOpening? opening,
     String? initialFen,
     String? lastFen,
     Side? winner,

@@ -20,7 +20,7 @@ import 'package:lichess_mobile/src/view/game/archived_game_screen.dart';
 class RecentGames extends ConsumerWidget {
   const RecentGames({required this.user, super.key});
 
-  final User user;
+  final LightUser user;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -119,9 +119,12 @@ class RecentGames extends ConsumerWidget {
       },
       error: (error, stackTrace) {
         debugPrint(
-          'SEVERE: [UserScreen] could not load user games; $error\n$stackTrace',
+          'SEVERE: [RecentGames] could not recent games; $error\n$stackTrace',
         );
-        return const Text('Could not load games.');
+        return Padding(
+          padding: Styles.bodySectionPadding,
+          child: const Text('Could not load recent games.'),
+        );
       },
       loading: () => Shimmer(
         child: ShimmerLoading(
